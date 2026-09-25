@@ -287,6 +287,13 @@ img.sprite.custom { image-rendering: auto !important; } /* sprites propios: van 
 .hist .k.input { color: var(--gold); } .hist .k.output { color: #8ab4d8; } .hist .k.state { color: var(--muted); } .hist .k.key { color: var(--warn); }
 .hist pre { margin: 6px 0 0; padding: 8px; background: #000; max-height: 320px; overflow: auto; font-family: var(--font-body); font-size: 17px; line-height: 1.05; white-space: pre-wrap; }
 .hist summary { cursor: pointer; }
+.hist .turn { padding: 10px 8px; margin: 8px 0; background: #0a080b; border: 1px solid var(--line); }
+.turn-head { display: flex; align-items: center; gap: 8px; }
+.turn-state { color: var(--muted); font-family: var(--font-ui); }
+.turn-state.idle { color: var(--ok); } .turn-state.needs_input { color: var(--blood); } .turn-state.working { color: var(--warn); }
+.turn-order { margin: 6px 0; color: var(--gold); white-space: pre-wrap; overflow-wrap: anywhere; }
+.turn-events { list-style: none; margin: 0; padding: 0 0 0 8px; border-left: 2px solid var(--line); }
+.turn-events > li { padding: 4px 0 4px 8px; }
 
 /* ---------- diálogos / toast ---------- */
 .dlg { background: var(--panel); color: var(--ink); border: 3px solid #000; box-shadow: 0 0 0 2px var(--gold), 0 20px 60px #000; padding: 20px 24px; min-width: min(420px, 92vw); }

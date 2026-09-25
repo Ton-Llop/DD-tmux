@@ -27,12 +27,41 @@ CHARS = {
     # una fila: de pie con la espada, arrodillado, tumbado (no se usa), caminando con la espada al hombro
     "leproso": {"work": ([3, 0], [1300, 900]), "ask": ([0, 1], 800), "rows": 1, "sleep_pose": 1,
                 "smooth": ["work", "ask"]},
+    # una fila: brazos abiertos, agachada, dormida (trae sus zetas), caminando
+    "joana": {"work": ([3, 0], [1500, 1300]), "ask": ([0, 1], 1100), "rows": 1, "sleep_pose": 2,
+              "sleep_erase": (340, 0, 420, 24),
+              "smooth": ["work", "ask"], "fades": 5, "key": {"th": 4, "peel": 1, "close": 8}},  # top negro: recorte fino
+    # 2 filas: quieto, carga, hacha en alto cargando, carga con la cabeza baja /
+    #          alza el hacha, toro encabritado, dormido sobre el toro, recibe un golpe
+    "volosin": {"work": ([1, 3, 2, 5], [1000, 900, 1100, 1200]), "ask": ([4, 0], 1100), "sleep_pose": 6,
+                "sleep_squash": (0.70, 0.3), "fades": 5,  # toro echado; fundidos largos = más fluido
+                "key": {"peel": 0},  # ropa negra: pelar el halo le come los brazos
+                "smooth": ["work", "ask"]},
     "medico": {"attack": ([2, 3, 4, 5], 900), "work": ([6, 5], 2100), "ask": ([7, 0], 700), "smooth": ["work", "ask"]},
 }
 
 
 def rgba(path):
     return np.array(Image.open(path).convert("RGBA"))
+
+
+def key_black(a, th=6, outline=3, peel=3, close=0):
+    """Sheet con fondo negro opaco: quita el negro conectado con los bordes (el de dentro de la figura
+    se queda) y repone un contorno oscuro de `outline` px como el del resto de personajes."""
+    if a[..., 3].min() < 255:
+        return a  # ya tiene transparencia
+    lab, _ = ndimage.label(a[..., :3].max(-1) < th)
+    border = np.unique(np.r_[lab[0], lab[-1], lab[:, 0], lab[:, -1]])
+    bg = np.isin(lab, border[border > 0])
+    fig = ndimage.binary_opening(~bg, iterations=2)  # fuera motas sueltas del fondo
+    if close:  # sombras casi negras por donde el recorte se cuela (entrepierna…): cierra y rellena
+        fig = ndimage.binary_fill_holes(ndimage.binary_closing(fig, iterations=close))
+    dark = a[..., :3].max(-1) < 45
+    for _ in range(peel):  # el halo oscuro del borde se pela capa a capa (umbral bajo = no rompe la ropa negra)
+        fig &= ~(dark & ndimage.binary_dilation(~fig))
+    ring = ndimage.binary_dilation(fig, iterations=outline) & ~fig
+    a = a.copy(); a[~fig] = 0; a[ring] = INK
+    return a
 
 
 def hard_alpha(im):  # pixel art: nada de bordes semitransparentes
@@ -52,7 +81,10 @@ def components(a, min_px):
 
 def poses(a, rows=2):
     h = a.shape[0]
-    own, big, _, objs = components(a, 8000)
+    own, big, sizes, objs = components(a, 8000)
+    thr = 0.25 * max(sizes[k - 1] for k in big)
+    if any(sizes[k - 1] < thr for k in big):  # polvo, hachas sueltas…: no son poses, van con la más cercana
+        own, big, sizes, objs = components(a, thr)
     # dos poses pegadas entre filas (p. ej. humo que toca los pies de arriba): se parten por la mitad
     for k in list(big) if rows == 2 else []:
         ys = objs[k - 1][0]
@@ -143,35 +175,40 @@ def sleeping(src, size, fixed_sc=None):
         c.alpha_composite(im, (round(ax + (ox.start - zx) * sc * zg), round(ay + (oy.start - zy) * sc * zg)))
         return c
 
-    out = []
-    for nz, st in [(0, 0), (1, 1), (2, 0), (3, 1)]:
-        c = body_layer(st * K)
-        for z in zs[:nz]:
-            c.alpha_composite(z_layer(z))
+    out, zl = [], [z_layer(z) for z in zs]
+    for f in range(16):  # respira despacio (0 -> K -> 0 px) y las zetas salen una a una
+        c = body_layer(round(K * (1 - np.cos(2 * np.pi * f / 16)) / 2))
+        for z in zl[:f * 4 // 16]:
+            c.alpha_composite(z)
         out.append(c)
     return out
 
 
-def smooth(frames, durations, step=80, fade=60):
+def smooth(frames, durations, step=80, fade=60, fades=2):
     """Más fps: en cada pose sostenida respira (se estira hasta 2 px desde los pies) y entre poses
-    mete 2 fotogramas de fundido. Devuelve (frames, lista de ms)."""
+    mete `fades` fotogramas de fundido. Devuelve (frames, lista de ms)."""
     out, ms = [], []
     for i, (f, d) in enumerate(zip(frames, durations)):
-        hold = d - 2 * fade
+        hold = d - fades * fade
         n = max(1, round(hold / step))
         for j in range(n):
-            s = round(K * (1 - np.cos(2 * np.pi * j / max(n, 2))))  # 0 -> 2K -> 0 px
-            b = f.getbbox()
-            if s and b:
-                body = f.crop(b); c = Image.new("RGBA", f.size)
-                body = body.resize((body.width, body.height + s), Image.LANCZOS)
-                c.alpha_composite(hard_alpha(body), (b[0], b[3] - body.height)); out.append(c)
-            else:
-                out.append(f)
+            out.append(breathe(f, round(K * (1 - np.cos(2 * np.pi * j / max(n, 2))))))  # 0 -> 2K -> 0 px
             ms.append(hold / n)
         nxt = frames[(i + 1) % len(frames)]
-        for t in (1 / 3, 2 / 3):
-            out.append(hard_alpha(Image.blend(f, nxt, t))); ms.append(fade)
+        # disolución sin huecos: siempre hay una pose entera. 1ª mitad: A completa y B aparece encima;
+        # 2ª mitad: B completa y lo que queda de A se va por detrás. (Image.blend oscurecía y medio
+        # borraba el cuerpo cuando las poses no coinciden.)
+        A, B = np.array(f), np.array(nxt)
+        noise = np.random.default_rng(i).random(A.shape[:2])
+        for j in range(1, fades + 1):
+            u = j / (fades + 1)
+            if u < 0.5:
+                c = A.copy(); m = (B[..., 3] > 0) & (noise < 2 * u)
+                c[m] = B[m]
+            else:
+                c = B.copy(); m = (A[..., 3] > 0) & (B[..., 3] == 0) & (noise >= 2 * u - 1)
+                c[m] = A[m]
+            out.append(Image.fromarray(c)); ms.append(fade)
     return out, [round(m) for m in ms]
 
 
@@ -219,26 +256,41 @@ def px_art(g):
     return p.resize((p.width * K, p.height * K), Image.NEAREST)
 
 
+def breathe(f, s):
+    """La figura se estira s px hacia arriba desde los pies (respirar, balancearse)."""
+    b = f.getbbox()
+    if not s or not b:
+        return f
+    body = f.crop(b); c = Image.new("RGBA", f.size)
+    body = body.resize((body.width, body.height + s), Image.LANCZOS)
+    c.alpha_composite(hard_alpha(body), (b[0], b[3] - body.height))
+    return c
+
+
 def bard(fr):
-    """Bufón tocando: notas que salen del laúd y se van flotando hacia los lados (a animar al grupo)."""
-    base, bob = fr[6], Image.new("RGBA", fr[6].size)
-    bob.alpha_composite(fr[6].crop((0, 0, fr[6].width, OUT_H - 2 * K)), (0, 2 * K))
+    """Bufón tocando: se balancea al compás y las notas salen del laúd flotando hacia el grupo."""
+    base = fr[6]
     W = base.width
     bx = base.getbbox()[2]  # borde derecho del bufón = clavijero del laúd
     sx, sy = bx - 10 * K, 44 * K
     n1, n2 = px_art(NOTE), px_art(NOTE2)
-    notes = [(0, n1, 7), (3, n2, 3), (5, n1, 9), (8, n2, 4), (10, n1, 6)]  # (frame de salida, dibujo, deriva x)
+    N, LIFE = 36, 12  # frames del bucle y de vida de cada nota: una en el aire cada vez, sin montones
+    notes = [(0, n1, 1.8), (12, n2, 1.1), (24, n1, 2.4)]  # (salida, dibujo, deriva x)
     out = []
-    for t in range(12):
-        c = Image.new("RGBA", base.size); c.alpha_composite(base if t % 2 == 0 else bob)
-        for t0, g, side in notes:
-            age = (t - t0) % 12
-            if age < 6:  # vive 6 frames: sale del laúd hacia el grupo, subiendo y ondulando
-                x, y = sx + (age * side + (1 if age % 2 else -1)) * K, sy - age * 7 * K
+    for t in range(N):
+        beat = abs(np.sin(np.pi * 4 * t / N))  # 4 golpes por compás
+        tilt = 4 * np.sin(2 * np.pi * t / N)  # se mece de lado a lado, pivotando en los pies
+        c = breathe(base, round(3 * K * beat))
+        c = hard_alpha(c.rotate(tilt, resample=Image.BICUBIC, center=(W / 2, OUT_H - 1)))
+        for t0, g, drift in notes:
+            age = (t - t0) % N
+            if age < LIFE:  # sube y se abre hacia el grupo, ondulando
+                x = sx + round((age * drift + 5 * np.sin(age / 2)) * K)
+                y = sy - round(age * 3.2 * K)
                 if 0 <= x < W - g.width and y >= 0:
                     c.alpha_composite(g, (x, y))
         out.append(c)
-    return out, 220
+    return out, 90
 
 
 PROPS = {"bufon": ("lute", bard)}  # GIF de trabajo con atrezo
@@ -246,11 +298,11 @@ PROPS = {"bufon": ("lute", bard)}  # GIF de trabajo con atrezo
 
 def build(cid):
     d = CUSTOM / cid
-    sheet = rgba(d / "sheet.png")
+    sheet = key_black(rgba(d / "sheet.png"), **CHARS[cid].get("key", {}))  # p. ej. {"peel": 0}
     fr, sheet_sc, raw = poses(sheet, CHARS[cid].get("rows", 2))
     for i, im in enumerate(fr):
         im.save(d / f"frame{i}.png")
-    for name, (idx, ms) in ((k, v) for k, v in CHARS[cid].items() if k not in ("sleep_in_sheet", "sleep_pose", "smooth", "rows")):
+    for name, (idx, ms) in ((k, v) for k, v in CHARS[cid].items() if k not in ("sleep_in_sheet", "sleep_pose", "sleep_erase", "sleep_squash", "smooth", "rows", "key", "fades")):
         pick = []
         for i in idx:
             if isinstance(i, str):  # "bobN": pose N agachada 2 px (balanceo)
@@ -259,7 +311,7 @@ def build(cid):
             else:
                 pick.append(fr[i])
         if name in CHARS[cid].get("smooth", ()):
-            pick, ms = smooth(pick, ms if isinstance(ms, list) else [ms] * len(pick))
+            pick, ms = smooth(pick, ms if isinstance(ms, list) else [ms] * len(pick), fades=CHARS[cid].get("fades", 2))
         save_gif(d / f"{name}.gif", pick, ms)
     if cid in PROPS:
         name, fn = PROPS[cid]
@@ -269,12 +321,23 @@ def build(cid):
         crop = sheet[h // 2:, w * 3 // 4:].copy()
         x0, y0, x1, y1 = CHARS[cid]["sleep_in_sheet"]; crop[y0:y1, x0:x1, 3] = 0
         Image.fromarray(crop).save(d / "sleep-src.png")
-        save_gif(d / "sleep.gif", sleeping(d / "sleep-src.png", fr[0].size, sheet_sc), 700)
+        save_gif(d / "sleep.gif", sleeping(d / "sleep-src.png", fr[0].size, sheet_sc), 220)
     elif "sleep_pose" in CHARS[cid]:  # durmiendo = una pose del sheet tal cual (sin zetas propias)
-        Image.fromarray(raw[CHARS[cid]["sleep_pose"]]).save(d / "sleep-src.png")
-        save_gif(d / "sleep.gif", sleeping(d / "sleep-src.png", fr[0].size, sheet_sc), 700)
+        crop = raw[CHARS[cid]["sleep_pose"]].copy()
+        if "sleep_erase" in CHARS[cid]:  # caja (px del recorte) con las zetas fijas del dibujo
+            x0, y0, x1, y1 = CHARS[cid]["sleep_erase"]; crop[y0:y1, x0:x1, 3] = 0
+        if "sleep_squash" in CHARS[cid]:  # (desde, factor): aplasta lo de abajo = patas recogidas, echado
+            frac, k = CHARS[cid]["sleep_squash"]
+            im = Image.fromarray(crop); cut = int(im.height * frac)
+            legs = im.crop((0, cut, im.width, im.height))
+            legs = legs.resize((im.width, max(1, round(legs.height * k))), Image.LANCZOS)
+            out = Image.new("RGBA", (im.width, cut + legs.height))
+            out.alpha_composite(im.crop((0, 0, im.width, cut))); out.alpha_composite(legs, (0, cut))
+            crop = np.array(out)
+        Image.fromarray(crop).save(d / "sleep-src.png")
+        save_gif(d / "sleep.gif", sleeping(d / "sleep-src.png", fr[0].size, sheet_sc), 220)
     elif (d / "sleep-src.png").exists():
-        save_gif(d / "sleep.gif", sleeping(d / "sleep-src.png", fr[0].size), 700)
+        save_gif(d / "sleep.gif", sleeping(d / "sleep-src.png", fr[0].size), 220)
     print(cid, "ok", fr[0].size)
 
 

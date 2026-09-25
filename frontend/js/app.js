@@ -26,7 +26,7 @@ const S = {
   showShells: LS.get("showShells") === "1",
   sound: LS.get("sound") !== "0",
   rpcId: 0, pending: new Map(),
-  histBefore: null,
+  histBefore: null, histTop: null, histEvents: [],
 };
 
 // ================= WebSocket =================
@@ -185,8 +185,13 @@ const NOISE = /^[\s─━│┃┌┐└┘├┤╭╮╰╯═║>›❯▶•
 /** Últimas `n` líneas con contenido de un pane (la pregunta, si está pidiendo permiso). */
 function activity(p, n) {
   if (p.state === "needs_input" && p.prompt) return [p.prompt.trim()];
+  return meaningful((p.tail || []).join("\n"), n);
+}
+
+/** Últimas `n` líneas de un texto de terminal que dicen algo (sin bordes ni ayudas de la TUI). */
+function meaningful(text, n) {
   const out = [];
-  const lines = (p.tail || []).join("\n").split("\n");
+  const lines = text.split("\n");
   for (const line of lines.reverse()) {
     const t = line.replace(/\s{2,}/g, " ").trim();
     const letters = (t.match(/\p{L}/gu) || []).length;
@@ -521,18 +526,61 @@ $("#assignClear").onclick = async () => {
 };
 
 // ---------- pestaña crónica ----------
-function resetHistory() { S.histBefore = null; $("#hist").replaceChildren(); loadHistory(); }
+function resetHistory() { S.histBefore = S.histTop = null; S.histEvents = []; $("#hist").replaceChildren(); loadHistory(); }
 async function loadHistory() {
   const p = S.panes.get(S.selected); if (!p) return;
-  const kinds = $$(".hist-filters input:checked").map((i) => i.value);
-  if (!kinds.length) return;
   try {
-    const r = await rpc({ op: "history", session: p.session, kinds, limit: 50, before_id: S.histBefore });
-    const list = $("#hist");
-    for (const ev of r.events) list.append(histItem(ev));
+    const r = await rpc({ op: "history", pane_id: p.pane_id, kinds: ["input", "output", "state", "key"], limit: 50, before_id: S.histBefore });
+    S.histEvents.push(...r.events);
     if (r.events.length) S.histBefore = r.events.at(-1).id;
+    S.histTop ??= r.events[0]?.id ?? 0;
+    renderHistory();
     $("#histMore").hidden = r.events.length < 50;
   } catch (e) { toast(e.message); }
+}
+function renderHistory() {
+  const visible = new Set($$(".hist-filters input:checked").map((i) => i.value));
+  const groups = [];
+  let group;
+  for (const ev of S.histEvents) { // eventos más nuevos primero
+    if (group?.order && ev.id < group.order.id) { groups.push(group); group = null; }
+    if (!group) group = { order: null, events: [] };
+    if (["input", "key"].includes(ev.kind)) group.order = ev;
+    if (visible.has(ev.kind)) group.events.push(ev);
+  }
+  if (group) groups.push(group);
+  const list = $("#hist");
+  list.replaceChildren(...groups.map((g) => histTurn(g, visible)).filter(Boolean));
+}
+function histTurn(group, visible) {
+  if (!group.events.length) return null;
+  const li = document.createElement("li");
+  li.className = "turn";
+  const first = group.events[0];
+  const result = group.events.find((ev) => ev.kind === "state" && ["idle", "needs_input", "dead"].includes(ev.data.to));
+  const output = group.events.find((ev) => ev.kind === "output");
+  const state = result?.data.to || output?.data.state || "working";
+  const head = document.createElement("div");
+  head.className = "turn-head";
+  const ts = document.createElement("span");
+  ts.className = "ts";
+  ts.textContent = new Date((group.order || first).ts).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const label = document.createElement("span");
+  label.className = `turn-state ${state}`;
+  label.textContent = group.order ? `Turno · ${STATE_LABEL[state] || state}` : `Actividad · ${STATE_LABEL[state] || state}`;
+  head.append(ts, label);
+  li.append(head);
+  if (group.order && visible.has(group.order.kind)) {
+    const command = document.createElement("div");
+    command.className = "turn-order";
+    command.textContent = group.order.kind === "input" ? group.order.data.text : `Tecla: ${group.order.data.key}`;
+    li.append(command);
+  }
+  const events = document.createElement("ol");
+  events.className = "turn-events";
+  for (const ev of group.events) if (ev !== group.order) events.append(histItem(ev));
+  if (events.childElementCount) li.append(events);
+  return li;
 }
 function histItem(ev) {
   const li = document.createElement("li");
@@ -545,8 +593,8 @@ function histItem(ev) {
   if (ev.kind === "output") {
     const det = document.createElement("details");
     const sum = document.createElement("summary");
-    const lines = (ev.data.screen || "").trimEnd().split("\n").filter((l) => l.trim());
-    sum.append(head, document.createTextNode(`${who} — ${(lines.at(-1) || "").slice(0, 60)}`));
+    const last = meaningful(ev.data.screen || "", 1)[0] || "";
+    sum.append(head, document.createTextNode(`${who} — ${last.slice(0, 90)}`));
     const pre = document.createElement("pre");
     pre.textContent = (ev.data.screen || "").trimEnd();
     det.append(sum, pre);
@@ -559,7 +607,22 @@ function histItem(ev) {
   return li;
 }
 $("#histMore").onclick = loadHistory;
-$$(".hist-filters input").forEach((i) => (i.onchange = resetHistory));
+
+// Crónica en vivo: con la pestaña abierta, cada 3 s se añaden arriba los eventos nuevos.
+setInterval(async () => {
+  const p = S.panes.get(S.selected), tab = $('.tab[data-tab="hist"]');
+  if (!p || $("#panel").hidden || !tab?.classList.contains("on") || S.histTop == null) return;
+  if (!$$(".hist-filters input:checked").length) return;
+  try {
+    const r = await rpc({ op: "history", pane_id: p.pane_id, kinds: ["input", "output", "state", "key"], limit: 50 });
+    const fresh = r.events.filter((ev) => ev.id > S.histTop);
+    if (!fresh.length) return;
+    S.histTop = fresh[0].id;
+    S.histEvents.unshift(...fresh);
+    renderHistory();
+  } catch { /* sin conexión: ya reintentará */ }
+}, 3000);
+$$(".hist-filters input").forEach((i) => (i.onchange = renderHistory));
 
 // ---------- tabs, envío, teclas ----------
 $$(".tabs button").forEach((b) => (b.onclick = () => {
