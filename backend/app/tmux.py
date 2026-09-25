@@ -98,15 +98,30 @@ def _descendant_cmdlines(pid: int, children, args, max_nodes: int = 200) -> str:
     return " ".join(out)
 
 
+# Agentes CLI conocidos: (tipo, regex sobre comando + título + cmdlines del árbol de procesos).
+# Orden = prioridad. Los nombres cortos/ambiguos (amp, droid) solo cuentan como ejecutable, no como palabra suelta.
+EXE = r"(?:^|[\s/])"  # inicio de ejecutable: tras espacio o "/"
+AGENTS = [
+    ("claude", re.compile(r"claude")),
+    ("codex", re.compile(r"\bcodex\b")),
+    ("gemini", re.compile(r"\bgemini\b")),
+    ("aider", re.compile(r"\baider\b")),
+    ("opencode", re.compile(r"\bopencode\b")),
+    ("cursor", re.compile(r"\bcursor-agent\b")),
+    ("copilot", re.compile(r"\bcopilot\b")),
+    ("qwen", re.compile(r"\bqwen\b")),
+    ("goose", re.compile(EXE + r"goose(?:\s|$)")),
+    ("crush", re.compile(EXE + r"crush(?:\s|$)")),
+    ("amp", re.compile(EXE + r"amp(?:\s|$)")),
+    ("droid", re.compile(EXE + r"droid(?:\s|$)")),
+    ("kiro", re.compile(r"\bkiro-cli\b")),
+    ("cline", re.compile(r"\bcline\b")),
+]
+
+
 def detect_agent(p: Pane, children, args) -> str:
     haystack = f"{p.command} {p.title} {_descendant_cmdlines(p.pid, children, args)}".lower()
-    if "claude" in haystack:
-        return "claude"
-    if "codex" in haystack:
-        return "codex"
-    if any(k in haystack for k in ("aider", "gemini", "opencode")):
-        return "other-agent"
-    return "shell"
+    return next((kind for kind, rx in AGENTS if rx.search(haystack)), "shell")
 
 
 async def list_panes() -> list[Pane]:

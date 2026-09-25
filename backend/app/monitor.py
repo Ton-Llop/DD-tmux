@@ -72,6 +72,14 @@ class Monitor:
             self.characters[target] = character
         else:
             self.characters.pop(target, None)
+        if target.startswith("agent:") and character:
+            # "Todos los X" manda: quita las asignaciones sueltas de los panes de ese tipo
+            agent = target.removeprefix("agent:")
+            for ps in self.panes.values():
+                slot = f"slot:{ps.pane.slot}"
+                if ps.pane.agent == agent and slot in self.characters:
+                    await db.set_character(slot, None)
+                    del self.characters[slot]
         await hub.broadcast({"type": "characters", "assignments": self.characters,
                              "panes": {pid: self.character_for(ps.pane)
                                        for pid, ps in self.panes.items()}})
@@ -146,7 +154,7 @@ class Monitor:
             if digest != ps.digest:
                 ps.digest, ps.screen, ps.last_change = digest, screen, now
                 plain = strip_ansi(screen).rstrip("\n").splitlines()
-                ps.tail = [l for l in plain if l.strip()][-3:]
+                ps.tail = [l for l in plain if l.strip()][-12:]  # el frontend elige las que tienen texto
                 await hub.to_subscribers(pid, {"type": "screen", "pane_id": pid, "content": screen})
 
             await self._update_state(ps, now)

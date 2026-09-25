@@ -8,7 +8,9 @@ const LS = {
   del(k) { try { localStorage.removeItem("ddtmux." + k); } catch {} },
 };
 
-const AGENT_LABEL = { claude: "Claude", codex: "Codex", "other-agent": "Agente", shell: "Shell" };
+const AGENT_LABEL = { claude: "Claude", codex: "Codex", gemini: "Gemini", aider: "Aider", opencode: "OpenCode",
+  cursor: "Cursor", copilot: "Copilot", qwen: "Qwen", goose: "Goose", crush: "Crush", amp: "Amp", droid: "Droid",
+  kiro: "Kiro", cline: "Cline", "other-agent": "Agente", shell: "Shell" };
 const STATE_LABEL = { working: "trabajando", idle: "en reposo", needs_input: "¡pide órdenes!", dead: "caído" };
 const LONG_IDLE_MS = 60_000;
 
@@ -20,6 +22,7 @@ const S = {
   selected: null,            // pane_id
   pick: null,                // personaje marcado en la pestaña Personaje
   room: LS.get("room"),       // sesión que se ve a pantalla completa
+  mapOpen: null,              // sesión con el bocadillo del mapa desplegado
   showShells: LS.get("showShells") === "1",
   sound: LS.get("sound") !== "0",
   rpcId: 0, pending: new Map(),
@@ -34,9 +37,13 @@ function connect() {
   const ws = new WebSocket(url, ["bearer." + token]);
   S.ws = ws; S.gotHello = false;
   ws.onmessage = (e) => onMessage(JSON.parse(e.data));
-  ws.onclose = () => {
+  ws.onclose = async () => {
     setConn(false);
-    if (!S.gotHello && S.retry >= 1) { LS.del("token"); return askToken("Token rechazado o servidor caído."); }
+    if (!S.gotHello && S.retry >= 1) {
+      // ¿token malo o servidor caído/reiniciando? Solo se borra el token si el servidor responde.
+      const up = await fetch("health", { cache: "no-store" }).then((r) => r.ok, () => false);
+      if (up) { LS.del("token"); return askToken("Token rechazado."); }
+    }
     S.retry++;
     setTimeout(connect, Math.min(1000 * 2 ** S.retry, 15000));
   };
@@ -109,11 +116,11 @@ function setConn(on) {
 function characterFor(p) {
   // primer candidato que exista (un id borrado del manifest cae al siguiente)
   const ids = [S.assignments[`slot:${p.slot}`], S.assignments[`agent:${p.agent}`],
-               S.registry.defaults[p.agent], "vagrant"];
-  return S.registry.chars[ids.find((id) => id && S.registry.chars[id])];
+               S.registry.defaults[p.agent], p.agent !== "shell" && S.registry.defaults["other-agent"]];
+  return S.registry.chars[ids.find((id) => id && S.registry.chars[id])] || Object.values(S.registry.chars)[0];
 }
 function assignmentSource(p) {
-  if (S.assignments[`slot:${p.slot}`]) return "asignado a este pane";
+  if (S.assignments[`slot:${p.slot}`]) return "asignado a este panel";
   if (S.assignments[`agent:${p.agent}`]) return `default para ${AGENT_LABEL[p.agent] || p.agent}`;
   return "default del juego";
 }
@@ -132,10 +139,12 @@ function renderAll() {
   const root = $("#rooms");
   $("#empty").hidden = bySession.size > 0;
   const seen = new Set();
+  const bgs = S.registry.backgrounds;
   for (const [session, panes] of [...bySession].sort((a, b) => a[0].localeCompare(b[0]))) {
     seen.add(session);
     let room = root.querySelector(`.room[data-session="${CSS.escape(session)}"]`);
     if (!room) { room = buildRoom(session); root.appendChild(room); }
+    if (bgs.length) setScene(room, bgs[(seen.size - 1) % bgs.length]); // salas seguidas, fondos distintos
     const agents = panes.filter((p) => p.agent !== "shell").length;
     $(".meta", room).textContent = agents ? `${agents} ${agents === 1 ? "agente" : "agentes"}` : "sin agentes";
     const party = $(".party", room);
@@ -170,6 +179,24 @@ function goRoom(session) {
   renderAll();
 }
 
+// Líneas de la TUI que no dicen nada: bordes, prompts vacíos, ayudas de teclas.
+const NOISE = /^[\s─━│┃┌┐└┘├┤╭╮╰╯═║>›❯▶•·.…_-]*$|for shortcuts|to interrupt|bypass permissions|auto-accept|shift\+tab|ctrl\+/i;
+
+/** Últimas `n` líneas con contenido de un pane (la pregunta, si está pidiendo permiso). */
+function activity(p, n) {
+  if (p.state === "needs_input" && p.prompt) return [p.prompt.trim()];
+  const out = [];
+  const lines = (p.tail || []).join("\n").split("\n");
+  for (const line of lines.reverse()) {
+    const t = line.replace(/\s{2,}/g, " ").trim();
+    const letters = (t.match(/\p{L}/gu) || []).length;
+    // con texto de verdad: al menos 3 letras y que no sea casi todo símbolos (bordes, barras…)
+    if (letters >= 3 && letters / t.length > 0.3 && !NOISE.test(t)) out.unshift(t.length > 160 ? t.slice(0, 159) + "…" : t);
+    if (out.length >= n) break;
+  }
+  return out;
+}
+
 function renderMap() {
   const map = $("#map");
   const rooms = $$(".room", $("#rooms")).map((r) => r.dataset.session);
@@ -179,6 +206,8 @@ function renderMap() {
     if (i) map.insertAdjacentHTML("beforeend", "<span class='corr'><i></i><i></i><i></i></span>");
     const ps = [...S.panes.values()].filter((p) => p.session === session && p.agent !== "shell");
     const alert = ps.some((p) => p.state === "needs_input"), busy = ps.some((p) => p.state === "working");
+    const stop = document.createElement("div");
+    stop.className = "map-stop";
     const b = document.createElement("button");
     b.className = "map-room" + (session === S.room ? " current" : "")
       + (alert ? " alert" : busy ? " busy" : ps.length ? " resting" : "");
@@ -186,12 +215,50 @@ function renderMap() {
     b.innerHTML = "<span class='lbl'></span>";
     $(".lbl", b).textContent = session;
     b.onclick = () => goRoom(session);
-    map.append(b);
+    stop.append(b);
+    if (alert || busy || S.mapOpen === session) stop.append(mapActivity(session, ps));
+    map.append(stop);
   });
 }
 
-/** Amplía la sala visible a zoom ENTERO (el pixel art no se deforma) y estira el escenario para llenar
- *  toda la ventana. Si los héroes no caben a lo ancho baja el zoom; a 1x, en último caso, fraccionario. */
+/** Bocadillo sobre la sala: qué hace (plegado) o todos sus agentes con sus últimas líneas (desplegado). */
+function mapActivity(session, ps) {
+  const open = S.mapOpen === session;
+  const box = document.createElement("div");
+  box.className = "map-act" + (open ? " open" : "") + (ps.some((p) => p.state === "needs_input") ? " alert" : "");
+  box.onclick = (e) => { e.stopPropagation(); S.mapOpen = open ? null : session; renderMap(); };
+  const row = (p, lines) => {
+    const r = document.createElement("div");
+    r.className = `act-row ${p.state}`;
+    const head = document.createElement("div");
+    head.className = "act-head";
+    head.textContent = `${characterFor(p).name} · ${AGENT_LABEL[p.agent] || p.agent} ${p.window_index}.${p.pane_index}`
+      + ` — ${STATE_LABEL[p.state] || p.state}`;
+    const body = document.createElement("div");
+    body.className = "act-lines";
+    body.textContent = activity(p, lines).join("\n") || "…";
+    r.append(head, body);
+    if (open) r.onclick = (e) => { e.stopPropagation(); S.mapOpen = null; goRoom(session); openPanel(p.pane_id); };
+    return r;
+  };
+  if (open) {
+    const t = document.createElement("div");
+    t.className = "act-title"; t.textContent = session;
+    box.append(t, ...ps.map((p) => row(p, 4)));
+  } else { // plegado: el que pide permiso primero, si no el primero que trabaja
+    const p = ps.find((x) => x.state === "needs_input") || ps.find((x) => x.state === "working");
+    box.append(row(p, 1));
+  }
+  return box;
+}
+document.addEventListener("click", (e) => { // clic fuera: se pliega
+  if (S.mapOpen && !e.target.closest(".map-act")) { S.mapOpen = null; renderMap(); }
+});
+
+const MAX_ZOOM = 1; // tamaño de los personajes: 1 = pequeños y se ve todo el fondo; 2, 3… = más grandes
+
+/** Amplía la sala visible a zoom ENTERO (el pixel art no se deforma), hasta MAX_ZOOM, y estira el escenario
+ *  para llenar toda la ventana. Si los héroes no caben a lo ancho baja el zoom; a 1x, en último caso, fraccionario. */
 function fitStage() {
   const room = $(".room.current"), main = $("#rooms");
   if (!room) return;
@@ -199,13 +266,15 @@ function fitStage() {
   room.style.setProperty("--z", 1); stage.style.height = "";
   const base = stage.offsetHeight, avail = main.getBoundingClientRect().bottom - stage.getBoundingClientRect().top;
   const apply = (z) => { room.style.setProperty("--z", z); stage.style.height = avail / z + "px"; };
-  const tooWide = () => party.scrollWidth > party.clientWidth;
-  let z = Math.max(1, Math.floor(avail / base));
+  // ancho real de los héroes (scrollWidth incluye adornos que sobresalen, como las "z", y engaña)
+  const need = () => [...party.children].reduce((w, h) => w + h.offsetWidth + 8, -8);
+  const tooWide = () => need() > party.clientWidth;
+  let z = Math.max(1, Math.min(MAX_ZOOM, Math.floor(avail / base)));
   apply(z);
   while (z > 1 && tooWide()) apply(--z);
-  if (tooWide()) apply(party.clientWidth / party.scrollWidth);
+  if (tooWide()) apply(party.clientWidth / need());
 }
-addEventListener("resize", fitStage);
+new ResizeObserver(() => fitStage()).observe($("#rooms")); // ventana o panel lateral
 document.addEventListener("keydown", (e) => { // ← → para cambiar de sala (fuera de campos de texto y terminal)
   if (!["ArrowLeft", "ArrowRight"].includes(e.key) || e.target.closest("input, textarea, select, #term")) return;
   const rooms = $$(".room", $("#rooms")).map((r) => r.dataset.session), i = rooms.indexOf(S.room);
@@ -234,6 +303,39 @@ function buildRoom(session) {
   return room;
 }
 
+// ================= fondos animados =================
+// Partículas por ambiente: n = cantidad; el resto, rangos [min, max] que se sortean por partícula.
+const FX = {
+  storm:   { n: 70, d: [0.5, 0.9] },                                    // lluvia + relámpagos
+  forest:  { n: 16, d: [4, 9], s: [2, 4], dx: [-40, 40], y: [30, 80] }, // luciérnagas
+  dungeon: { n: 22, d: [5, 10], s: [2, 3], dx: [-30, 30] },             // brasas que suben
+  ashes:   { n: 28, d: [8, 16], s: [2, 4], dx: [-60, 60] },             // ceniza que cae
+};
+const rnd = ([a, b]) => a + Math.random() * (b - a);
+
+function setScene(room, bg) {
+  const stage = $(".stage", room);
+  if (stage.dataset.bg === bg.src) return;
+  stage.dataset.bg = bg.src;
+  stage.classList.add("painted");
+  $(".scene", stage)?.remove();
+  const scene = document.createElement("div");
+  scene.className = `scene fx-${bg.fx}`;
+  scene.innerHTML = `<div class="bgimg"></div><div class="fog"></div><div class="fog b"></div>
+                     <div class="parts"></div><div class="glow"></div>`;
+  $(".bgimg", scene).style.backgroundImage = `url("${bg.src}")`;
+  const cfg = FX[bg.fx] || { n: 0 }, parts = $(".parts", scene);
+  for (let i = 0; i < cfg.n; i++) {
+    const p = document.createElement("i");
+    const d = rnd(cfg.d);
+    p.style.cssText = `--x:${rnd([0, 100])}%;--d:${d}s;--dl:${-rnd([0, d])}s`
+      + (cfg.s ? `;--s:${rnd(cfg.s).toFixed(1)}px` : "") + (cfg.dx ? `;--dx:${rnd(cfg.dx)}px` : "")
+      + (cfg.y ? `;--y:${rnd(cfg.y)}%` : "");
+    parts.append(p);
+  }
+  stage.prepend(scene);
+}
+
 function buildHero(p, ch) {
   const el = document.createElement("div");
   el.className = "hero";
@@ -241,7 +343,7 @@ function buildHero(p, ch) {
   el.dataset.char = ch.id;
   el.innerHTML = `<div class="bubble"></div><div class="alert">!</div><div class="zzz">z</div>
                   <div class="spark"></div><div class="nameplate"></div><div class="shadow"></div>`;
-  el.insertBefore(spriteImg(ch, p.state, 5), $(".nameplate", el));
+  el.insertBefore(spriteImg(ch, p.state), $(".nameplate", el));
   el.onclick = () => openPanel(p.pane_id);
   return el;
 }
@@ -256,8 +358,7 @@ function updateHero(p) {
     const img = $(".sprite", el), want = ch.images[p.state] || ch.images.idle;
     if (want && !img.src.endsWith(want)) img.src = want;
   }
-  const last = p.state === "needs_input" && p.prompt ? p.prompt : (p.tail || []).at(-1) || "";
-  $(".bubble", el).textContent = last.trim().slice(0, 80) || "…";
+  $(".bubble", el).textContent = activity(p, 1)[0]?.slice(0, 80) || "…";
   $(".nameplate", el).textContent = `${AGENT_LABEL[p.agent] || p.agent} · ${p.window_index}.${p.pane_index}`;
   el.title = `${ch.name} — ${STATE_LABEL[p.state] || p.state}\n${p.command} @ ${p.path}`;
 }
@@ -347,7 +448,6 @@ function openPanel(paneId) {
   S.pick = null;
   $("#panel").hidden = false;
   document.body.classList.add("panel-open");
-  setTimeout(fitStage, 250); // tras la transición del panel
   if (!term) initTerm();
   term.reset();
   renderPanelHead();
@@ -363,7 +463,6 @@ function closePanel() {
   S.selected = null;
   $("#panel").hidden = true;
   document.body.classList.remove("panel-open");
-  setTimeout(fitStage, 250);
   S.panes.forEach(updateHero);
 }
 
@@ -372,7 +471,7 @@ function renderPanelHead() {
   if (!p) return;
   const ch = characterFor(p);
   const portrait = $("#pPortrait");
-  portrait.replaceChildren(spriteImg(ch, p.state, 4));
+  portrait.replaceChildren(spriteImg(ch, p.state));
   $("#pName").textContent = ch.name;
   $("#pMeta").innerHTML = "";
   const line1 = document.createElement("div");
@@ -398,7 +497,7 @@ function renderCharTab() {
     const card = document.createElement("button");
     card.type = "button";
     card.className = "char-card" + (ch.id === S.pick ? " pick" : "") + (ch.id === cur.id ? " current" : "");
-    card.append(spriteImg(ch, "idle", 3));
+    card.append(spriteImg(ch, "idle"));
     const n = document.createElement("div"); n.className = "cn"; n.textContent = ch.name;
     const b = document.createElement("div"); b.className = "cb"; b.textContent = ch.blurb || "";
     card.append(n, b);

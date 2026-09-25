@@ -1,6 +1,7 @@
 # Corta sprite sheets de frontend/sprites/custom/<id>/ en GIFs por estado.
 #   uv run --no-project --with pillow --with scipy scripts/cut_sprites.py [id ...]
-# Cada carpeta: sheet.png (8 poses en 2 filas, fondo transparente) y opcional sleep-src.png (tumbado).
+# Cada carpeta: sheet.png (8 poses en 2 filas de 4, o "rows": 1 para una sola fila; fondo transparente)
+# y opcional sleep-src.png (tumbado).
 # Las poses se numeran 0-7 en orden de lectura. Añade tu personaje a CHARS y al manifest.json.
 import sys
 from pathlib import Path
@@ -19,6 +20,12 @@ CHARS = {
     "cazador": {"work": ([0, 2, 4, 3, 2, 5], [650, 550, 400, 900, 500, 950]), "attack": ([2, 3, 4, 5], 400), "ask": ([6, 0], 600),
                 # durmiendo = pose 8 del sheet; se borran sus zetas fijas (caja en px del recorte) y se animan las nuestras
                 "sleep_in_sheet": (200, 0, 444, 127),
+                "smooth": ["work", "ask"]},
+    # shells: una fila de 4 poses (de pie, caja sorpresa, sentado, caminando)
+    "vagabundo": {"work": ([1, 0], [1400, 800]), "ask": ([3, 0], 700), "rows": 1, "sleep_pose": 2,
+                  "smooth": ["work", "ask"]},
+    # una fila: de pie con la espada, arrodillado, tumbado (no se usa), caminando con la espada al hombro
+    "leproso": {"work": ([3, 0], [1300, 900]), "ask": ([0, 1], 800), "rows": 1, "sleep_pose": 1,
                 "smooth": ["work", "ask"]},
     "medico": {"attack": ([2, 3, 4, 5], 900), "work": ([6, 5], 2100), "ask": ([7, 0], 700), "smooth": ["work", "ask"]},
 }
@@ -43,19 +50,29 @@ def components(a, min_px):
     return np.where(m & (dist <= 25), lab[iy, ix], 0), big, sizes, ndimage.find_objects(lab)
 
 
-def poses(a):
+def poses(a, rows=2):
     h = a.shape[0]
     own, big, _, objs = components(a, 8000)
     # dos poses pegadas entre filas (p. ej. humo que toca los pies de arriba): se parten por la mitad
-    for k in list(big):
+    for k in list(big) if rows == 2 else []:
         ys = objs[k - 1][0]
         if ys.start < h * .45 and ys.stop > h * .55:
             new = own.max() + 1
             own[h // 2:][own[h // 2:] == k] = new; big.append(new)
-    assert len(big) == 8, f"esperaba 8 poses, hay {len(big)}"
+    # en una fila, dos poses que se tocan (una espada, un pie): la pieza más ancha se parte por la
+    # columna con menos píxeles de su tramo central
+    while rows == 1 and len(big) < 4:
+        k = max(big, key=lambda k: np.ptp(np.nonzero(own == k)[1]))
+        cols = (own == k).sum(0)
+        xs = np.nonzero(cols)[0]; x0, x1 = xs.min(), xs.max()
+        mid = slice(x0 + (x1 - x0) * 3 // 10, x0 + (x1 - x0) * 7 // 10)
+        cut = mid.start + int(np.argmin(cols[mid]))
+        new = own.max() + 1
+        own[:, cut:][own[:, cut:] == k] = new; big.append(new)
+    assert len(big) == 4 * rows, f"esperaba {4 * rows} poses, hay {len(big)}"
 
     def key(k):
-        ys, xs = np.nonzero(own == k); return (ys.min() > h * .45, xs.min())
+        ys, xs = np.nonzero(own == k); return (rows == 2 and ys.min() > h * .45, xs.min())
     frames = []
     for k in sorted(big, key=key):
         ys, xs = np.nonzero(own == k)
@@ -64,6 +81,7 @@ def poses(a):
         fh = f.shape[0]
         cx = np.nonzero(f[int(fh * .8):, :, 3])[1].mean()  # centro de los pies para alinear (no bailan entre poses)
         frames.append((f, cx))
+    raw = [f for f, _ in frames]  # recortes a resolución original (para dormir con una pose del sheet)
     W = int(max(max(cx, f.shape[1] - cx) for f, cx in frames) * 2) + 2
     H = max(f.shape[0] for f, _ in frames)
     out = []
@@ -71,7 +89,7 @@ def poses(a):
         c = Image.new("RGBA", (W, H))
         c.alpha_composite(Image.fromarray(f), (int(W / 2 - cx), H - f.shape[0]))
         out.append(hard_alpha(c.resize((round(W * OUT_H / H), OUT_H), Image.LANCZOS)))
-    return out, OUT_H / H
+    return out, OUT_H / H, raw
 
 
 def sleeping(src, size, fixed_sc=None):
@@ -229,10 +247,10 @@ PROPS = {"bufon": ("lute", bard)}  # GIF de trabajo con atrezo
 def build(cid):
     d = CUSTOM / cid
     sheet = rgba(d / "sheet.png")
-    fr, sheet_sc = poses(sheet)
+    fr, sheet_sc, raw = poses(sheet, CHARS[cid].get("rows", 2))
     for i, im in enumerate(fr):
         im.save(d / f"frame{i}.png")
-    for name, (idx, ms) in ((k, v) for k, v in CHARS[cid].items() if k not in ("sleep_in_sheet", "smooth")):
+    for name, (idx, ms) in ((k, v) for k, v in CHARS[cid].items() if k not in ("sleep_in_sheet", "sleep_pose", "smooth", "rows")):
         pick = []
         for i in idx:
             if isinstance(i, str):  # "bobN": pose N agachada 2 px (balanceo)
@@ -251,6 +269,9 @@ def build(cid):
         crop = sheet[h // 2:, w * 3 // 4:].copy()
         x0, y0, x1, y1 = CHARS[cid]["sleep_in_sheet"]; crop[y0:y1, x0:x1, 3] = 0
         Image.fromarray(crop).save(d / "sleep-src.png")
+        save_gif(d / "sleep.gif", sleeping(d / "sleep-src.png", fr[0].size, sheet_sc), 700)
+    elif "sleep_pose" in CHARS[cid]:  # durmiendo = una pose del sheet tal cual (sin zetas propias)
+        Image.fromarray(raw[CHARS[cid]["sleep_pose"]]).save(d / "sleep-src.png")
         save_gif(d / "sleep.gif", sleeping(d / "sleep-src.png", fr[0].size, sheet_sc), 700)
     elif (d / "sleep-src.png").exists():
         save_gif(d / "sleep.gif", sleeping(d / "sleep-src.png", fr[0].size), 700)

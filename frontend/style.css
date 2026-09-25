@@ -37,7 +37,6 @@ code { font-family: var(--font-body); color: var(--gold); }
   padding: 0 20px;
   background: linear-gradient(#0f0c11, #140f16);
   border-top: 2px solid var(--line);
-  transition: margin-right .2s;
 }
 body.panel-open .bar { margin-right: min(600px, 100vw); }
 .bar-side { flex: 1; display: flex; align-items: center; gap: 14px; min-width: 0; }
@@ -66,7 +65,6 @@ body.panel-open .bar { margin-right: min(600px, 100vw); }
 /* ---------- salas: se ve una a toda la ventana, el resto en el mapa ---------- */
 .rooms {
   flex: 1; min-height: 0; overflow: hidden;
-  transition: margin-right .2s;
 }
 .room:not(.current) { display: none; }
 .room.current { position: relative; height: 100%; border: 0; box-shadow: none; }
@@ -109,6 +107,57 @@ body.panel-open .rooms { margin-right: min(600px, 100vw); }
     radial-gradient(circle at 36px 70px, #ff8a201a 0, transparent 90px),
     radial-gradient(circle at calc(100% - 36px) 70px, #ff8a201a 0, transparent 90px),
     radial-gradient(ellipse at 50% 88%, #ff90302a 0%, transparent 30%, #000d 75%, #000 100%); }
+
+/* ---------- fondos pintados y animados (manifest "backgrounds") ---------- */
+.stage.painted { background: #000; }
+.stage.painted::before, .stage.painted .torch { display: none; }
+.stage.painted::after, .room.resting .stage.painted::after { z-index: 2;
+  background: radial-gradient(ellipse at 50% 55%, transparent 50%, #0009 85%, #000d 100%); }
+.stage.painted .party { bottom: 9%; }
+.scene { position: absolute; inset: 0; overflow: hidden; container-type: size; }
+.scene > * { position: absolute; pointer-events: none; }
+.bgimg { inset: -4%; background: center bottom / cover no-repeat; image-rendering: auto;
+  animation: pan 60s ease-in-out infinite alternate; }
+@keyframes pan { from { transform: translateX(-1.5%) scale(1.02); } to { transform: translateX(1.5%) scale(1.05); } }
+/* niebla: 2 capas de 200% de ancho con manchas que se repiten cada 100%; se desplazan en bucle sin salto */
+.fog { left: 0; bottom: 14%; width: 200%; height: 45%; opacity: .22; mix-blend-mode: screen;
+  background: radial-gradient(ellipse 22% 35% at 20% 60%, var(--fog), transparent 70%) 0 0 / 50% 100% repeat-x,
+              radial-gradient(ellipse 28% 30% at 65% 45%, var(--fog), transparent 70%) 0 0 / 50% 100% repeat-x;
+  animation: fog 110s linear infinite; }
+.fog.b { bottom: 4%; height: 30%; opacity: .16; animation-duration: 70s; animation-direction: reverse; }
+@keyframes fog { to { transform: translateX(-50%); } }
+.parts { inset: 0; }
+.parts i { position: absolute; left: var(--x); }
+.glow { inset: 0; opacity: 0; }
+
+.fx-storm { --fog: #9fc3d8; }
+.fx-storm .parts i { top: 0; width: 1px; height: 8%; background: linear-gradient(#0000, #cfe6ffaa);
+  animation: rain var(--d) linear var(--dl) infinite; }
+@keyframes rain { from { transform: translate(0, -10cqh) rotate(10deg); } to { transform: translate(-12cqh, 110cqh) rotate(10deg); } }
+.fx-storm .glow { background: #d6ecff; mix-blend-mode: screen; animation: lightning 11s infinite; }
+@keyframes lightning { 0%, 91%, 100% { opacity: 0; } 92% { opacity: .35; } 93% { opacity: 0; } 94.5% { opacity: .22; } 96% { opacity: 0; } }
+
+.fx-forest { --fog: #b8b894; }
+.fx-forest .parts i { top: var(--y); width: var(--s); height: var(--s); border-radius: 50%;
+  background: #e2f58a; box-shadow: 0 0 6px 2px #cde45a88;
+  animation: firefly var(--d) ease-in-out var(--dl) infinite alternate, blink 2.6s ease-in-out var(--dl) infinite; }
+@keyframes firefly { to { transform: translate(var(--dx), -6cqh); } }
+@keyframes blink { 0%, 100% { opacity: .1; } 50% { opacity: 1; } }
+
+.fx-dungeon { --fog: #7a4a2e; }
+.fx-dungeon .parts i { bottom: 12%; width: var(--s); height: var(--s); background: #ffb050; box-shadow: 0 0 4px #ff7a20;
+  animation: ember var(--d) linear var(--dl) infinite; }
+@keyframes ember { 0% { transform: translate(0, 0); opacity: 0; } 10% { opacity: 1; } 100% { transform: translate(var(--dx), -70cqh); opacity: 0; } }
+.fx-dungeon .glow { background: radial-gradient(ellipse at 50% 75%, #ff8a2030, transparent 60%); animation: torchlight 4s steps(1) infinite; }
+@keyframes torchlight { 0% { opacity: .8; } 13% { opacity: 1; } 27% { opacity: .7; } 41% { opacity: .95; } 58% { opacity: .75; } 76% { opacity: 1; } 89% { opacity: .85; } }
+
+.fx-ashes { --fog: #a08a82; }
+.fx-ashes .parts i { top: 0; width: var(--s); height: var(--s); background: #bcaea6aa;
+  animation: ash var(--d) linear var(--dl) infinite; }
+.fx-ashes .parts i:nth-child(4n) { background: #ff9a50; box-shadow: 0 0 4px #ff6a20; } /* alguna brasa */
+@keyframes ash { from { transform: translate(0, -5cqh) rotate(0); } to { transform: translate(var(--dx), 105cqh) rotate(540deg); } }
+.fx-ashes .glow { background: radial-gradient(ellipse 60% 40% at 55% 20%, #ff503028, transparent 70%); animation: pulse-glow 7s ease-in-out infinite; }
+@keyframes pulse-glow { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
 
 .torch { position: absolute; top: 46px; width: 16px; height: 48px; z-index: 1; }
 .torch.l { left: 22px; } .torch.r { right: 22px; }
@@ -219,9 +268,10 @@ img.sprite.custom { image-rendering: auto !important; } /* sprites propios: van 
 .hint { margin: 0; color: var(--muted); font-size: 16px; }
 
 .char-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; overflow: auto; }
-.char-card { background: #0a080b; border: 2px solid var(--line); padding: 10px 6px 6px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
-.char-card .sprite { image-rendering: pixelated; }
-.char-card .cn { font-family: var(--font-ui); font-size: 15px; }
+.char-card { background: #0a080b; border: 2px solid var(--line); padding: 10px 6px 6px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; min-width: 0; overflow: hidden; }
+/* el sprite cabe en la tarjeta (los propios son anchos) */
+.char-card .sprite { image-rendering: pixelated; max-width: 100%; max-height: 96px; width: auto; height: auto !important; object-fit: contain; }
+.char-card .cn { font-family: var(--font-ui); font-size: 15px; max-width: 100%; overflow-wrap: anywhere; hyphens: auto; }
 .char-card .cb { font-size: 14px; color: var(--muted); line-height: 1; }
 .char-card:hover { border-color: var(--muted); }
 .char-card.pick { border-color: var(--gold); box-shadow: 0 0 12px #c9a24a55; }
@@ -254,7 +304,7 @@ img.sprite.custom { image-rendering: auto !important; } /* sprites propios: van 
 /* ---------- mapa (estilo Darkest Dungeon) ---------- */
 .map {
   display: flex; align-items: center; justify-content: safe center; flex-shrink: 1; min-width: 0;
-  padding: 12px 8px 30px; overflow-x: auto;
+  padding: 12px 8px 30px;
 }
 .map-room {
   position: relative; flex-shrink: 0; width: 52px; height: 52px; padding: 0; cursor: pointer;
@@ -272,9 +322,27 @@ img.sprite.custom { image-rendering: auto !important; } /* sprites propios: van 
 .map-room.alert { background: #4a1418; color: #ff6a6a; animation: pulse 1s steps(2) infinite; }
 .map-room.alert::before { content: "!"; }
 .map-room .lbl { position: absolute; top: calc(100% + 5px); left: 50%; transform: translateX(-50%);
-  max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 84px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-family: var(--font-body); font-size: 16px; color: var(--muted); }
 .map-room.current .lbl { color: var(--gold); }
+/* actividad en el mapa: bocadillo encima de la sala; clic = desplegar */
+.map-stop { position: relative; flex-shrink: 0; }
+.map-act { position: absolute; bottom: calc(100% + 18px); left: 50%; transform: translateX(-50%); z-index: 25;
+  width: max-content; max-width: 240px; padding: 4px 8px; cursor: pointer; text-align: left;
+  background: #e8dcc4; color: #1a1418; border: 2px solid #000; box-shadow: 0 4px 0 #0008;
+  font-family: var(--font-body); font-size: 15px; line-height: 1.05; }
+.map-act::after { content: ""; position: absolute; top: 100%; left: 50%; margin-left: -5px;
+  border: 5px solid transparent; border-top-color: #000; }
+.map-act.alert { background: #ffe0d0; animation: pulse 1s steps(2) infinite; }
+.map-act .act-head { font-family: var(--font-ui); font-size: 12px; color: #6a4a2a; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.map-act .act-lines { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.map-act.open { width: min(420px, 90vw); max-width: none; max-height: 55vh; overflow: auto; animation: none; cursor: default; }
+.map-act.open .act-title { font-family: var(--font-ui); font-weight: 700; color: var(--blood); margin-bottom: 4px; }
+.map-act.open .act-row { padding: 4px 0; border-top: 1px solid #0003; cursor: pointer; }
+.map-act.open .act-row:hover { background: #0000000d; }
+.map-act.open .act-lines { white-space: pre-wrap; overflow-wrap: anywhere; }
+.map-act .act-row.needs_input .act-head { color: var(--blood); }
 .corr { display: flex; gap: 4px; padding: 0 6px; flex-shrink: 0; }
 .corr i { width: 8px; height: 8px; background: #3a2e34; border: 2px solid #000; }
 
