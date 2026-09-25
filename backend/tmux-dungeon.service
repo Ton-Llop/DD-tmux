@@ -1,0 +1,14 @@
+# ~/.config/systemd/user/tmux-dungeon.service  -> systemctl --user enable --now tmux-dungeon
+# Corre como TU usuario (para ver tu servidor tmux), en la máquina donde viven las sesiones.
+[Unit]
+Description=tmux-dungeon backend
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/DD-tmux/backend
+EnvironmentFile=%h/DD-tmux/backend/.env
+ExecStart=%h/DD-tmux/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8765
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

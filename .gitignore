@@ -1,0 +1,7 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+*.zip
+frontend/sprites/custom/*
+!frontend/sprites/custom/manifest.example.json

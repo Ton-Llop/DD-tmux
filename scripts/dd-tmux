@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# dd-tmux [stop|log]: arranca el backend en segundo plano (si no corre) y abre la web.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+LOG="${XDG_CACHE_HOME:-$HOME/.cache}/dd-tmux.log"
+PORT="$(sed -n 's/^TD_PORT=//p' "$ROOT/backend/.env")"; PORT="${PORT:-8765}"
+running() { pgrep -f "uvicorn app.main:app.*--port $PORT" >/dev/null; }
+
+case "${1:-}" in
+  stop) pkill -f "uvicorn app.main:app.*--port $PORT" && echo "dd-tmux parado"; exit ;;
+  log)  exec tail -f "$LOG" ;;
+esac
+
+if ! running; then
+  mkdir -p "$(dirname "$LOG")"
+  nohup bash "$ROOT/scripts/start.sh" >"$LOG" 2>&1 &
+  for _ in $(seq 20); do curl -s -o /dev/null "http://127.0.0.1:$PORT" && break; sleep 0.5; done
+fi
+URL="http://localhost:$PORT"
+echo "dd-tmux en $URL  (dd-tmux stop | dd-tmux log)"
+# Abre el navegador de Windows desde WSL; en Linux normal usa xdg-open
+{ command -v wslview && wslview "$URL" || explorer.exe "$URL" || xdg-open "$URL"; } >/dev/null 2>&1 || true

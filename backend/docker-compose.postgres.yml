@@ -1,0 +1,13 @@
+# Para el LXC/VM de Postgres en Proxmox
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dungeon
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?define PG_PASSWORD}
+      POSTGRES_DB: dungeon
+    ports: ["5432:5432"]   # restringe a tu LAN con el firewall de Proxmox
+    volumes: [pgdata:/var/lib/postgresql/data]
+volumes:
+  pgdata:

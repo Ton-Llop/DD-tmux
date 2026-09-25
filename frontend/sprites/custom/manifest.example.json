@@ -1,0 +1,16 @@
+{
+  "characters": {
+    "mi-heroe": {
+      "name": "Mi héroe",
+      "blurb": "sprite propio",
+      "images": {
+        "idle": "custom/mi-heroe/idle.png",
+        "working": "custom/mi-heroe/attack.gif",
+        "needs_input": "custom/mi-heroe/idle.png"
+      },
+      "height": 110,
+      "animated": true
+    }
+  },
+  "defaults": { "claude": "mi-heroe" }
+}
