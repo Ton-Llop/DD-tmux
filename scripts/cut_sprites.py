@@ -35,7 +35,7 @@ CHARS = {
     #          alza el hacha, toro encabritado, dormido sobre el toro, recibe un golpe
     "volosin": {"work": ([1, 3, 2, 5], [1000, 900, 1100, 1200]), "ask": ([4, 0], 1100), "sleep_pose": 6,
                 "sleep_squash": (0.70, 0.3), "fades": 5,  # toro echado; fundidos largos = más fluido
-                "key": {"peel": 0},  # ropa negra: pelar el halo le come los brazos
+                "key": {"peel": 0, "close": 22},  # ropa negra: sin pelar (se come los brazos) y tapando agujeros
                 "smooth": ["work", "ask"]},
     "medico": {"attack": ([2, 3, 4, 5], 900), "work": ([6, 5], 2100), "ask": ([7, 0], 700), "smooth": ["work", "ask"]},
 }
@@ -55,7 +55,12 @@ def key_black(a, th=6, outline=3, peel=3, close=0):
     bg = np.isin(lab, border[border > 0])
     fig = ndimage.binary_opening(~bg, iterations=2)  # fuera motas sueltas del fondo
     if close:  # sombras casi negras por donde el recorte se cuela (entrepierna…): cierra y rellena
-        fig = ndimage.binary_fill_holes(ndimage.binary_closing(fig, iterations=close))
+        lab, n = ndimage.label(fig)
+        for k, sl in enumerate(ndimage.find_objects(lab), 1):  # figura a figura: sin puentes entre poses
+            pad = tuple(slice(max(0, x.start - close), x.stop + close) for x in sl)
+            one = lab[pad] == k
+            if one.sum() > 1000:
+                fig[pad] |= ndimage.binary_fill_holes(ndimage.binary_closing(one, iterations=close))
     dark = a[..., :3].max(-1) < 45
     for _ in range(peel):  # el halo oscuro del borde se pela capa a capa (umbral bajo = no rompe la ropa negra)
         fig &= ~(dark & ndimage.binary_dilation(~fig))
