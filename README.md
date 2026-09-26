@@ -47,7 +47,7 @@ mkdir -p ~/.local/bin && ln -sf "$PWD/scripts/dd-tmux" ~/.local/bin/dd-tmux   # 
 dd-tmux                             # starts in the background and opens http://localhost:8765
 ```
 
-- `dd-tmux stop` stops it, `dd-tmux log` shows the log. In the foreground: `bash scripts/start.sh`.
+- `dd-tmux stop` stops it, `dd-tmux log` shows the log, `dd-tmux start` starts it without opening the browser. In the foreground: `bash scripts/start.sh`.
 - With the backend running, frontend and sprite changes only need a page reload
   (Ctrl+F5). Backend changes (`backend/app/`) need `dd-tmux stop && dd-tmux`.
 - The web asks for the token printed by `setup-wsl.sh` (`TD_AUTH_TOKEN` in `backend/.env`).
@@ -60,9 +60,19 @@ You can also create rooms from the web with **+ Room**.
 Bring up `backend/docker-compose.postgres.yml` in a Proxmox LXC/VM and change
 `TD_DATABASE_URL` in `backend/.env`. Restrict port 5432 to your LAN with the Proxmox firewall.
 
-### Autostart (optional)
+### Start it together with tmux (optional)
 
-With systemd (on WSL, enable it in `/etc/wsl.conf` → `[boot]\nsystemd=true`), copy
+So you never have to type `dd-tmux`: add this line to `~/.tmux.conf` and DD-tmux starts in the
+background every time you create a tmux session (if it's already running, nothing happens):
+
+```tmux
+set-hook -g session-created 'run-shell -b "$HOME/.local/bin/dd-tmux start"'
+```
+
+Reload it with `tmux source-file ~/.tmux.conf` (or restart tmux), then keep http://localhost:8765
+open or bookmarked. It's plain tmux config, so it works the same on WSL and Linux.
+
+**Always on instead:** with systemd (on WSL, enable it in `/etc/wsl.conf` → `[boot]\nsystemd=true`), copy
 `backend/tmux-dungeon.service` to `~/.config/systemd/user/`, adjust the paths
 (default `~/DD-tmux`) and run `systemctl --user enable --now tmux-dungeon`.
 
@@ -101,7 +111,7 @@ Want more? See *Adding your own characters*. The default character for each agen
 the manifest's `defaults` (`other-agent` = any agent without its own default); if missing, the first one is used.
 
 Change them from the panel (**Character** tab):
-- **This panel only** → stored by `session:window.pane`, so it survives a tmux restart
+- **This agent only** → stored by `session:window.pane`, so it survives a tmux restart
 - **All Claude/Codex/…** → default for that agent type; it also clears the individual
   assignments of panes of that type, so the change reaches all of them
 

@@ -43,7 +43,7 @@ body.panel-open .bar { margin-right: min(600px, 100vw); }
 .bar-side.end { justify-content: flex-end; }
 .brand { font-family: var(--font-ui); font-weight: 700; font-size: 22px; letter-spacing: 1px; display: flex; align-items: center; gap: 8px; }
 .brand .dot { color: var(--blood); }
-.flame { width: 10px; height: 16px; background: #ffb040; box-shadow: 0 0 12px #ff8a20, 0 -4px 0 -1px #ffe08a; animation: flicker 0.4s steps(2) infinite; }
+.brand-icon { height: 30px; image-rendering: pixelated; filter: drop-shadow(0 0 6px #ff8a2066); }
 .conn { display: flex; align-items: center; gap: 8px; color: var(--muted); }
 .conn i { width: 10px; height: 10px; background: var(--blood); }
 .conn.on i { background: var(--ok); box-shadow: 0 0 8px var(--ok); }

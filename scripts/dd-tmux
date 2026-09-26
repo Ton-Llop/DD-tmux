@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# dd-tmux [stop|log]: starts the backend in the background (if not running) and opens the web.
+# dd-tmux [start|stop|log]: starts the backend in the background (if not running) and opens the web.
+# `dd-tmux start` only starts it, without opening the browser (used by the tmux hook).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 LOG="${XDG_CACHE_HOME:-$HOME/.cache}/dd-tmux.log"
@@ -16,6 +17,7 @@ if ! running; then
   nohup bash "$ROOT/scripts/start.sh" >"$LOG" 2>&1 &
   for _ in $(seq 20); do curl -s -o /dev/null "http://127.0.0.1:$PORT" && break; sleep 0.5; done
 fi
+[ "${1:-}" = start ] && exit 0
 URL="http://localhost:$PORT"
 echo "dd-tmux at $URL  (dd-tmux stop | dd-tmux log)"
 # Opens the Windows browser from WSL; on plain Linux uses xdg-open

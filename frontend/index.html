@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=VT323&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/xterm.css">
   <link rel="stylesheet" href="style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23140f16'/><rect x='6' y='3' width='4' height='6' fill='%23ffb040'/><rect x='7' y='9' width='2' height='5' fill='%236b4a2a'/></svg>">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
 </head>
 <body>
   <main id="rooms" class="rooms">
@@ -21,7 +21,7 @@
   <!-- Bottom bar: status on the left, dungeon map (one room per tmux session) and controls -->
   <footer class="bar">
     <div class="bar-side">
-      <div class="brand"><span class="flame"></span>DD<span class="dot">·</span>tmux</div>
+      <div class="brand"><img class="brand-icon" src="icon.svg" alt="">DD<span class="dot">·</span>tmux</div>
       <div class="conn" id="conn"><i></i><span>disconnected</span></div>
       <div class="alerts" id="alerts" hidden></div>
     </div>
@@ -88,7 +88,7 @@
     <section class="tab tab-char" data-tab="char">
       <div class="char-grid" id="charGrid"></div>
       <div class="char-actions">
-        <button class="btn" id="assignSlot">This panel only</button>
+        <button class="btn" id="assignSlot">This agent only</button>
         <button class="btn" id="assignAgent">All <span id="agentName"></span></button>
         <button class="btn ghost" id="assignClear">Clear assignment</button>
       </div>
