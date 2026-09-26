@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS events (
     session  TEXT,
     pane_id  TEXT,
     agent    TEXT,
-    kind     TEXT NOT NULL,   -- session_open/close, pane_open/close, state, output, input, key
+    kind     TEXT NOT NULL,   -- session/pane lifecycle, state/output/input/key, code_edit
     data     JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 CREATE INDEX IF NOT EXISTS events_session_ts ON events (session, ts DESC);

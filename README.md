@@ -1,28 +1,49 @@
 # DD-tmux
 
-Your tmux sessions as rooms in a Darkest Dungeon-style dungeon. Every AI agent
-(Claude Code, Codex, Gemini…) is a character: it works while the agent is working, sleeps
-when it's done and raises a **!** when it asks for permission. Click a character to open
-its live terminal, where you give it orders, change its character or read the chronicle
-(history in Postgres).
+**Your AI coding agents, as a Darkest Dungeon party.**
 
-```
-DD-tmux/
-├── backend/      FastAPI + WebSocket + PostgreSQL (watches tmux)
-├── frontend/     the web UI (served by the backend itself)
-│   └── sprites/custom/   ← characters and backgrounds (add your own here)
-└── scripts/      setup, startup and sprite cutter
-```
+You run Claude Code in one tmux session, Codex in another, Gemini in a third… and you keep
+missing the one that has been sitting on *"Do you want to make this edit?"* for ten minutes.
+DD-tmux turns every tmux session into a torch-lit dungeon room and every agent into a hero, so
+one glance tells you who is working, who is done and who needs you.
 
-## Quick start (WSL)
+![DD-tmux in 24 seconds](docs/demo.webp)
 
-You need [uv](https://docs.astral.sh/uv/) (the setup installs it if missing) and tmux.
+<sub>🔊 Want it with sound? [Watch the full demo video](docs/demo.mp4).</sub>
+
+## What it does
+
+- **⚔ Agents fight while they work, 💤 sleep when they're done.** DD-tmux watches every tmux pane,
+  finds the agent running in it and animates its hero to match: fighting while the screen changes,
+  asleep once the turn is over.
+- **❗ A red ! when an agent needs you.** Permission prompts (`Do you want to…`, `(y/n)`, `Allow…`)
+  raise an alert over the hero, light up its room on the map, change the tab title and play a chime.
+- **🔔 A chime when an agent finishes.** When a turn ends you hear it, so you can go do something else
+  while your agents work. Asking and finishing sound different; one click on the bell mutes both.
+- **🖥 Click a hero, you're in its terminal.** A live terminal opens in a side panel: type straight
+  into it, press `1`/`y`/`Esc` with one click, or send a longer order.
+- **🧾 Code tab: only what the agent changed.** See each captured edit in red and green. New rooms
+  launched from DD-tmux enable edit tracking for Claude, Codex, Gemini, OpenCode and Copilot.
+- **📜 Chronicle.** Every order, key press, state change and turn result is kept in Postgres, grouped by turn.
+- **🗺 A map of your whole dungeon.** One room per tmux session, joined by corridors, each with a
+  bubble showing what its agents are doing right now.
+- **14 agents detected out of the box:** Claude, Codex, Gemini, Aider, OpenCode, Cursor, Copilot,
+  Qwen, Goose, Crush, Amp, Droid, Kiro and Cline. Plain shells get a hero too.
+- **7 heroes and 4 animated rooms included** (embers, fireflies, storm, falling ash), and you can add your own.
+- **Private by design.** It listens only on `127.0.0.1` and requires a token; reach it from your
+  phone through Tailscale or Cloudflare Tunnel.
+
+## Quick start
+
+**Needs:** tmux, PostgreSQL and [uv](https://docs.astral.sh/uv/) (Python). The setup script installs tmux and uv
+if they're missing. Written for WSL; plain Debian/Ubuntu works the same way. On macOS, install tmux, uv and
+Postgres yourself and follow the steps in `scripts/setup-wsl.sh`.
 
 ```bash
-cd ~/projects/DD-tmux
+git clone https://github.com/Ton-Llop/DD-tmux && cd DD-tmux
 bash scripts/postgres-local.sh      # only if you don't have Postgres on the homelab yet
 bash scripts/setup-wsl.sh           # uv sync (backend/.venv) + backend/.env with a token
-ln -sf "$PWD/scripts/dd-tmux" ~/.local/bin/dd-tmux
+mkdir -p ~/.local/bin && ln -sf "$PWD/scripts/dd-tmux" ~/.local/bin/dd-tmux   # ~/.local/bin must be on your PATH
 dd-tmux                             # starts in the background and opens http://localhost:8765
 ```
 
@@ -39,24 +60,24 @@ You can also create rooms from the web with **+ Room**.
 Bring up `backend/docker-compose.postgres.yml` in a Proxmox LXC/VM and change
 `TD_DATABASE_URL` in `backend/.env`. Restrict port 5432 to your LAN with the Proxmox firewall.
 
-### Autostart on WSL (optional)
+### Autostart (optional)
 
-With systemd enabled in WSL (`/etc/wsl.conf` → `[boot]\nsystemd=true`), copy
+With systemd (on WSL, enable it in `/etc/wsl.conf` → `[boot]\nsystemd=true`), copy
 `backend/tmux-dungeon.service` to `~/.config/systemd/user/`, adjust the paths
 (default `~/DD-tmux`) and run `systemctl --user enable --now tmux-dungeon`.
 
 ### Access from outside your home
 
 The backend is a **remote shell**: it listens only on `127.0.0.1` and the port is never opened.
-Options, all from inside WSL:
+Options, all from the machine running DD-tmux:
 
 - **Tailscale** (the simplest): `tailscale serve 8765` → `https://<your-pc>.<tailnet>.ts.net`
 - **Cloudflare Tunnel + Access**: `cloudflared tunnel` to `http://localhost:8765`,
   with an Access policy (email) in front, on top of the token.
 
-## The interface
+## Interface details
 
-- **One room fills the window**: each tmux session is a room and you see one at a time. Character
+- **Room size**: you see one room at a time. Character
   size is set by `MAX_ZOOM` in `frontend/js/app.js` (1 = small, with the whole background in
   view; 2, 3… = bigger, always at a whole zoom factor so the pixel art doesn't warp).
 - **Map** (bottom bar): the rooms joined by corridors. Each room shows **⚔** if someone is
@@ -65,6 +86,10 @@ Options, all from inside WSL:
 - **Activity on the map**: above every room with someone working or waiting there's a bubble with
   what they're doing. Click it to expand it with every agent in the room and their last
   lines; click an agent to jump to its terminal.
+- **Sound**: the bell in the bottom bar toggles both chimes (asking: two falling notes; finished: three rising
+  notes). A turn counts as finished only after 5 s of work, and shells never chime.
+- **Side panel**: **Terminal** (live, type directly), **Code** (per-agent edits),
+  **Character** (pick its hero) and **Chronicle** (its history, turn by turn).
 - **Animated backgrounds**: each room gets one of the manifest's backgrounds (neighbouring rooms get
   different ones) with fog and particles depending on the mood. Without custom backgrounds the stock wall is used.
 
@@ -153,4 +178,21 @@ Each character is a folder `frontend/sprites/custom/<id>/` with `sheet.png` and 
 - **Chronicle**: orders and keys sent, state changes and screen captures (max. 1 every 5 s
   per pane, plus always the one at the end of each turn). Retention: `TD_RETENTION_DAYS` (14).
 
+## Project layout
+
+```
+DD-tmux/
+├── backend/      FastAPI + WebSocket + PostgreSQL (watches tmux)
+├── frontend/     the web UI (served by the backend itself)
+│   └── sprites/custom/   ← characters and backgrounds (add your own here)
+├── docs/         demo video
+└── scripts/      setup, startup and sprite cutter
+```
+
 WebSocket protocol and REST API: [`backend/README.md`](backend/README.md).
+
+## License
+
+[MIT](LICENSE), code and art alike: use it, fork it, bring your own heroes.
+
+<sub>Inspired by *Darkest Dungeon*. DD-tmux is a fan project, not affiliated with or endorsed by Red Hook Studios.</sub>

@@ -81,10 +81,13 @@ function onMessage(m) {
     case "state": {
       const p = S.panes.get(m.pane_id);
       if (!p) break;
-      const wasAsking = p.state === "needs_input";
+      const wasAsking = p.state === "needs_input", wasWorking = p.state === "working";
       Object.assign(p, { state: m.state, tail: m.tail, agent: m.agent, prompt: m.prompt });
       if (m.state !== "idle") p.last_change = Date.now() / 1000;
-      if (m.state === "needs_input" && !wasAsking) chime();
+      if (m.state === "working" && !wasWorking) p.work_since = Date.now();
+      if (m.state === "needs_input" && !wasAsking) chime(ASK_NOTES);
+      // finished a turn: only agents (shells flip on every keystroke) that worked for a while (not a flicker)
+      else if (m.state === "idle" && wasWorking && p.agent !== "shell" && Date.now() - (p.work_since || 0) > DONE_MIN_MS) chime(DONE_NOTES);
       updateHero(p); updateRoomMood(p.session); updateAlerts();
       if (S.selected === p.pane_id) renderPanelHead();
       break;
@@ -179,13 +182,35 @@ function goRoom(session) {
   renderAll();
 }
 
-// TUI lines that say nothing: borders, empty prompts, key hints.
-const NOISE = /^[\s─━│┃┌┐└┘├┤╭╮╰╯═║>›❯▶•·.…_-]*$|for shortcuts|to interrupt|bypass permissions|auto-accept|shift\+tab|ctrl\+/i;
+// TUI lines that say nothing: borders, empty prompts, key hints, status bars.
+const NOISE = /^[\s─━│┃┌┐└┘├┤╭╮╰╯═║>›❯▶•·.…_-]*$|for shortcuts|to interrupt|esc to cancel|bypass permissions|auto-accept|shift\+tab|ctrl\+|update installed|restart to apply|auto-updat/i;
+// What a working agent is doing: its last action ("⏺ Update(db.py)", "• Edited app/queue.py")…
+const ACTION = /^\s*[⏺●•]\s+(\S.*)$/u;
+// …or else its spinner line ("✻ Pondering… (12s · esc to interrupt)" -> "Pondering…").
+const SPINNER = /^[^\p{L}]*(\p{L}[^(]*?)\s*\([^)]*\b(?:esc|ctrl\+c) to (?:interrupt|cancel)/iu;
 
-/** Last `n` lines with content from a pane (the question, if it is asking for permission). */
+function doing(tail) {
+  const lines = [...tail].reverse();
+  for (const l of lines) {
+    const m = l.match(ACTION);
+    if (m && !NOISE.test(m[1])) return m[1].replace(/\s{2,}/g, " ").trim().slice(0, 160);
+  }
+  for (const l of lines) {
+    const m = l.match(SPINNER);
+    if (m) return m[1].trim();
+  }
+  return null;
+}
+
+/** Last `n` lines with content from a pane: the question if it asks for permission; if it is working,
+ *  what it is doing right now as the latest line. */
 function activity(p, n) {
   if (p.state === "needs_input" && p.prompt) return [p.prompt.trim()];
-  return meaningful((p.tail || []).join("\n"), n);
+  const now = p.state === "working" && doing(p.tail || []);
+  const out = meaningful((p.tail || []).join("\n"), n);
+  if (!now) return out;
+  const rest = out.filter((l) => !l.includes(now));
+  return [...rest, now].slice(-n);
 }
 
 /** Last `n` lines of terminal text that say something (no TUI borders or hints). */
@@ -293,7 +318,7 @@ function buildRoom(session) {
   room.dataset.session = session;
   room.innerHTML = `
     <header class="plaque"><span class="name"></span><span class="meta"></span>
-      <button class="btn ghost danger kill" title="Kill tmux session">✕</button></header>
+      <button class="btn ghost danger kill" title="Delete this room and stop its agents">Delete room</button></header>
     <div class="stage">
       <div class="torch l"><div class="fire"></div><div class="stick"></div></div>
       <div class="torch r"><div class="fire"></div><div class="stick"></div></div>
@@ -301,10 +326,18 @@ function buildRoom(session) {
     </div>`;
   $(".name", room).textContent = session;
   $(".kill", room).onclick = async () => {
-    if (!confirm(`Kill tmux session "${session}"? Everything running inside dies.`)) return;
+    if (!await confirmDeleteRoom(session)) return;
     try { await rpc({ op: "kill_session", name: session }); } catch (e) { toast(e.message); }
   };
   return room;
+}
+
+function confirmDeleteRoom(session) {
+  const dialog = $("#deleteRoomDialog");
+  $("#deleteRoomName").textContent = `“${session}”`;
+  dialog.returnValue = "";
+  dialog.showModal();
+  return new Promise((resolve) => dialog.addEventListener("close", () => resolve(dialog.returnValue === "delete"), { once: true }));
 }
 
 // ================= animated backgrounds =================
@@ -457,6 +490,7 @@ function openPanel(paneId) {
   renderPanelHead();
   renderCharTab();
   resetHistory();
+  if ($('.tab[data-tab="code"]')?.classList.contains("on")) loadCode();
   S.panes.forEach(updateHero);
   rpc({ op: "subscribe", pane_id: paneId }).catch((e) => toast(e.message));
   requestAnimationFrame(sizeTerm);
@@ -631,34 +665,53 @@ async function loadCode() {
   const p = S.panes.get(S.selected);
   if (!p) return;
   const status = $("#codeStatus"), diff = $("#codeDiff");
+  const agent = AGENT_LABEL[p.agent] || p.agent || "agent";
+  $("#codeTitle").textContent = `Edits by ${agent}`;
+  $("#codePath").textContent = p.path || "";
   status.textContent = "Loading changes…";
   diff.hidden = true;
   try {
-    const r = await fetch(`/api/panes/${encodeURIComponent(p.pane_id)}/diff`, {
+    const r = await fetch(`/api/panes/${encodeURIComponent(p.pane_id)}/agent-edits`, {
       headers: { Authorization: `Bearer ${LS.get("token")}` }, cache: "no-store",
     });
-    const data = await r.json();
-    if (!r.ok) throw new Error(r.status === 404 && data.detail === "Not Found"
-      ? "Restart the backend to enable Code view (dd-tmux stop && dd-tmux)."
-      : data.detail || r.statusText);
+    const events = await r.json();
+    if (!r.ok) throw new Error(events.detail || r.statusText);
     if (S.selected !== p.pane_id) return;
-    $("#codePath").textContent = data.path;
-    if (!data.diff) { status.textContent = "No uncommitted code changes."; return; }
-    status.textContent = data.truncated ? "Diff truncated to 500 KB." : "Git diff";
-    diff.replaceChildren(...data.diff.split("\n").map((line) => {
-      const row = document.createElement("span");
-      row.className = line.startsWith("+") && !line.startsWith("+++") ? "diff-add"
-        : line.startsWith("-") && !line.startsWith("---") ? "diff-del"
-        : line.startsWith("@@") || line.startsWith("diff --git") ? "diff-meta" : "";
-      row.textContent = line + "\n";
-      return row;
+    if (!events.length) {
+      status.textContent = ["claude", "codex", "gemini", "opencode", "copilot"].includes(p.agent)
+        ? `No edits captured yet. Open a new ${agent} room from DD-tmux to enable edit tracking.`
+        : `Edit tracking is not enabled for ${agent} yet.`;
+      return;
+    }
+    status.textContent = `${events.length} captured edit${events.length === 1 ? "" : "s"}`;
+    diff.replaceChildren(...events.map((event) => {
+      const card = document.createElement("article");
+      card.className = "agent-diff";
+      const heading = document.createElement("header");
+      heading.textContent = `${agent} · ${new Date(event.ts).toLocaleTimeString()}`;
+      const pre = document.createElement("pre");
+      pre.append(...event.data.diff.split("\n").map((line, i, all) => {
+        const row = document.createElement("span");
+        row.className = line.startsWith("+") && !line.startsWith("+++") ? "diff-add"
+          : line.startsWith("-") && !line.startsWith("---") ? "diff-del"
+          : line.startsWith("@@") || line.startsWith("---") || line.startsWith("+++") ? "diff-meta" : "";
+        row.textContent = line + (i < all.length - 1 ? "\n" : "");
+        return row;
+      }));
+      card.append(heading, pre);
+      return card;
     }));
     diff.hidden = false;
   } catch (e) {
-    if (S.selected === p.pane_id) status.textContent = `Could not read the diff: ${e.message}`;
+    if (S.selected === p.pane_id) status.textContent = e.message === "Not Found"
+      ? "This backend does not have the Code API yet. Restart DD-tmux (dd-tmux stop && dd-tmux), then refresh."
+      : `Could not read the diff: ${e.message}`;
   }
 }
 $("#codeRefresh").onclick = loadCode;
+setInterval(() => {
+  if (!$("#panel").hidden && $('.tab[data-tab="code"]')?.classList.contains("on")) loadCode();
+}, 3000);
 
 // ---------- tabs, sending, keys ----------
 $$(".tabs button").forEach((b) => (b.onclick = () => {
@@ -692,16 +745,19 @@ $("#sendText").addEventListener("keydown", (e) => {
 $("#showShells").checked = S.showShells;
 $("#showShells").onchange = (e) => { S.showShells = e.target.checked; LS.set("showShells", S.showShells ? "1" : "0"); renderAll(); };
 const soundBtn = $("#soundBtn");
-const syncSound = () => { soundBtn.style.opacity = S.sound ? 1 : 0.35; };
-soundBtn.onclick = () => { S.sound = !S.sound; LS.set("sound", S.sound ? "1" : "0"); syncSound(); if (S.sound) chime(); };
+const syncSound = () => { soundBtn.classList.toggle("muted", !S.sound); };
+soundBtn.onclick = () => { S.sound = !S.sound; LS.set("sound", S.sound ? "1" : "0"); syncSound(); if (S.sound) chime(DONE_NOTES); };
 syncSound();
 
+const ASK_NOTES = [523, 392];        // C5 → G4, falling: an agent wants you
+const DONE_NOTES = [392, 523, 659];  // G4 → C5 → E5, rising: an agent finished its turn
+const DONE_MIN_MS = 5000;
 let actx;
-function chime() {
+function chime(notes) {
   if (!S.sound) return;
   try {
     actx ??= new AudioContext();
-    [523, 392].forEach((f, i) => {
+    notes.forEach((f, i) => {
       const o = actx.createOscillator(), g = actx.createGain();
       o.type = "square"; o.frequency.value = f;
       g.gain.setValueAtTime(0.05, actx.currentTime + i * 0.12);

@@ -234,30 +234,123 @@ async def new_session(name: str, cwd: str | None = None, command: str | None = N
 
 
 def _instrument_agent(command: str) -> str:
-    """Enable native tool hooks for the two built-in agents."""
-    agent = command.strip().split(maxsplit=1)[0].rsplit("/", 1)[-1]
+    """Enable native tool hooks for supported agents launched in new rooms."""
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return command
+    if not argv:
+        return command
+    agent = argv[0].rsplit("/", 1)[-1]
     hook = Path(__file__).with_name("agent_edit_hook.py")
+    if agent in {"gemini", "gemini-cli"}:
+        base = os.getenv("GEMINI_CLI_SYSTEM_SETTINGS_PATH", "/etc/gemini-cli/settings.json")
+        try:
+            existing = json.loads(Path(base).read_text()) if Path(base).is_file() else {}
+        except (OSError, ValueError):
+            existing = {}
+        command_hook = shlex.join([sys.executable, str(hook), "{phase}", "gemini"])
+        hooks = existing.setdefault("hooks", {})
+        for event, phase in (("BeforeTool", "pre"), ("AfterTool", "post")):
+            hooks.setdefault(event, []).append({
+                "matcher": ".*",
+                "hooks": [{"type": "command", "command": command_hook.format(phase=phase),
+                           "timeout": 15000}],
+            })
+        config_path = Path(tempfile.gettempdir()) / f"dd-tmux-gemini-settings-{os.getuid()}.json"
+        config_path.write_text(json.dumps(existing))
+        config_path.chmod(0o600)
+        return shlex.join(["env", f"GEMINI_CLI_SYSTEM_SETTINGS_PATH={config_path}", *argv])
+    if agent in {"opencode", "opencode-cli"}:
+        overlay = _opencode_plugin_dir()
+        env = [
+            f"OPENCODE_CONFIG_DIR={overlay}",
+            f"DD_TMUX_CAPTURE_PYTHON={sys.executable}",
+            f"DD_TMUX_CAPTURE_HOOK={hook}",
+        ]
+        return shlex.join(["env", *env, *argv])
+    if agent in {"copilot", "github-copilot"}:
+        return shlex.join(["env", f"COPILOT_HOME={_copilot_home(hook)}", *argv])
     if agent == "claude":
         handlers = {
             event: [{"matcher": "Bash|Write|Edit|NotebookEdit|MultiEdit", "hooks": [{
-                "type": "command", "command": shlex.join([sys.executable, str(hook), phase, "claude"])
+                "type": "command", "command": shlex.join([sys.executable, str(hook), phase, "claude"]),
+                "timeout": 15
             }]}]
             for event, phase in (("PreToolUse", "pre"), ("PostToolUse", "post"))
         }
         config_path = Path(tempfile.gettempdir()) / f"dd-tmux-claude-settings-{os.getuid()}.json"
-        config_path.write_text(json.dumps({"bashEditDiffEnabled": True, "hooks": handlers}))
+        config_path.write_text(json.dumps({"hooks": handlers}))
         config_path.chmod(0o600)
-        return f"claude --settings {shlex.quote(str(config_path))}"
+        return shlex.join([*argv, "--settings", str(config_path)])
     if agent == "codex":
         args = []
         for event, phase in (("PreToolUse", "pre"), ("PostToolUse", "post")):
             handler_command = shlex.join([sys.executable, str(hook), phase, "codex"])
-            value = [{"matcher": "Bash|apply_patch|Edit|Write", "hooks": [{
-                "type": "command", "command": handler_command
-            }]}]
-            args += ["-c", shlex.quote(f"hooks.{event}={json.dumps(value)}")]
-        return "codex " + " ".join(args)
+            hook_config = (f"hooks.{event}=[{{ matcher = \"Bash|apply_patch|Edit|Write\", "
+                           f"hooks = [{{ type = \"command\", command = {json.dumps(handler_command)}, "
+                           f"timeout = 15 }}] }}]")
+            args += ["-c", hook_config]
+        return shlex.join([*argv, *args])
     return command
+
+
+def _opencode_plugin_dir() -> Path:
+    root = Path(tempfile.gettempdir()) / f"dd-tmux-opencode-{os.getuid()}"
+    plugins = root / "plugins"
+    plugins.mkdir(parents=True, exist_ok=True)
+    source = Path(os.getenv("OPENCODE_CONFIG_DIR", Path.home() / ".config/opencode"))
+    if source.is_dir():
+        for item in source.iterdir():
+            target_dir = plugins if item.name == "plugins" else root
+            target_dir.mkdir(parents=True, exist_ok=True)
+            if item.name == "plugins" and item.is_dir():
+                for plugin in item.iterdir():
+                    target = plugins / plugin.name
+                    if not target.exists():
+                        target.symlink_to(plugin.resolve(), target_is_directory=plugin.is_dir())
+            elif item.name != "plugins":
+                target = root / item.name
+                if not target.exists():
+                    target.symlink_to(item.resolve(), target_is_directory=item.is_dir())
+    plugin = plugins / "dd-tmux-edit-capture.js"
+    source_plugin = Path(__file__).with_name("opencode_edit_plugin.js").resolve()
+    if plugin.is_symlink() and plugin.resolve() != source_plugin:
+        plugin.unlink()
+    if not plugin.exists():
+        plugin.symlink_to(source_plugin)
+    return root
+
+
+def _copilot_home(hook: Path) -> Path:
+    root = Path(tempfile.gettempdir()) / f"dd-tmux-copilot-{os.getuid()}"
+    root.mkdir(parents=True, exist_ok=True)
+    source = Path(os.getenv("COPILOT_HOME", Path.home() / ".copilot"))
+    hooks = root / "hooks"
+    hooks.mkdir(exist_ok=True)
+    if source.is_dir():
+        for item in source.iterdir():
+            if item.name == "hooks" and item.is_dir():
+                for config in item.glob("*.json"):
+                    target = hooks / config.name
+                    if not target.exists():
+                        target.symlink_to(config.resolve())
+            elif item.name != "hooks":
+                target = root / item.name
+                if not target.exists():
+                    target.symlink_to(item.resolve(), target_is_directory=item.is_dir())
+    hook_cmd = shlex.join([sys.executable, str(hook), "{phase}", "copilot"])
+    config = {
+        "version": 1,
+        "hooks": {
+            "preToolUse": [{"type": "command", "bash": hook_cmd.format(phase="pre"),
+                            "timeoutSec": 15}],
+            "postToolUse": [{"type": "command", "bash": hook_cmd.format(phase="post"),
+                             "timeoutSec": 15}],
+        },
+    }
+    (hooks / "dd-tmux-agent-edits.json").write_text(json.dumps(config))
+    return root
 
 
 async def kill_session(name: str):

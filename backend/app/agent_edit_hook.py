@@ -23,7 +23,7 @@ MAX_DIFF_BYTES = 500_000
 
 def git(root, *args):
     return subprocess.run(["git", "-C", str(root), *args], check=True,
-                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL).stdout
+                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5).stdout
 
 
 def snapshot(root):
@@ -85,23 +85,40 @@ def token():
 def main():
     phase, agent = sys.argv[1:3]
     event = json.load(sys.stdin)
+    event.setdefault("cwd", event.get("workingDirectory"))
+    event.setdefault("session_id", event.get("sessionId"))
+    event.setdefault("tool_name", event.get("toolName"))
+    if "tool_input" not in event and event.get("toolArgs"):
+        try:
+            event["tool_input"] = json.loads(event["toolArgs"])
+        except (TypeError, ValueError):
+            event["tool_input"] = event["toolArgs"]
+    tool_name = str(event.get("tool_name") or "").lower()
+    if tool_name and not any(word in tool_name for word in ("bash", "shell", "write", "edit", "patch", "file")):
+        return
     pane = os.getenv("TMUX_PANE", "")
     if not re.fullmatch(r"%\d+", pane):
         return
     cwd = Path(event.get("cwd") or os.getcwd()).resolve()
     try:
         root = Path(os.fsdecode(git(cwd, "rev-parse", "--show-toplevel").strip())).resolve()
-    except (subprocess.CalledProcessError, OSError):
+    except (subprocess.SubprocessError, OSError):
         return
     session_id = str(event.get("session_id") or "")
-    tool_id = str(event.get("tool_use_id") or "")
+    tool_id = str(event.get("tool_use_id") or event.get("call_id") or "")
+    if not tool_id:
+        tool_input = json.dumps(event.get("tool_input", {}), sort_keys=True, separators=(",", ":"))
+        tool_id = hashlib.sha256(f"{event.get('tool_name', '')}\0{tool_input}".encode()).hexdigest()
     key = hashlib.sha256(f"{pane}\0{session_id}\0{tool_id}".encode()).hexdigest()
     state = Path(tempfile.gettempdir()) / "dd-tmux-agent-edits" / f"{key}.json"
 
     if phase == "pre":
-        state.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        data = {"root": str(root), "files": snapshot(root)}
-        state.write_text(json.dumps(data))
+        try:
+            state.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            data = {"root": str(root), "files": snapshot(root)}
+            state.write_text(json.dumps(data))
+        except (OSError, subprocess.SubprocessError):
+            pass
         return
 
     try:
@@ -111,7 +128,10 @@ def main():
         return
     if before["root"] != str(root):
         return
-    diff = unified(before["files"], snapshot(root))
+    try:
+        diff = unified(before["files"], snapshot(root))
+    except (OSError, subprocess.SubprocessError):
+        return
     if not diff:
         return
     diff = diff[:MAX_DIFF_BYTES]

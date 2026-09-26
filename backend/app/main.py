@@ -64,6 +64,13 @@ class SendText(BaseModel):
     enter: bool = True
 
 
+class AgentEdit(BaseModel):
+    agent: str = Field(pattern="^(claude|codex|gemini|opencode|copilot)$")
+    diff: str = Field(min_length=1, max_length=500_000)
+    session_id: str = Field(max_length=200)
+    tool_use_id: str = Field(max_length=200)
+
+
 @app.get("/health")
 async def health():
     return {"ok": True}
@@ -92,6 +99,26 @@ async def get_code_diff(pane_id: str):
         return {"path": path, "diff": diff, "truncated": truncated}
     except tmux.TmuxError as e:
         raise HTTPException(400, str(e))
+
+
+@app.get("/api/panes/{pane_id}/agent-edits", dependencies=[Depends(require_auth)])
+async def get_agent_edits(pane_id: str, limit: int = 100):
+    if pane_id not in monitor.panes:
+        raise HTTPException(404, "pane not found")
+    return await db.history(pane_id=pane_id, kinds=["code_edit"], limit=limit)
+
+
+@app.post("/api/panes/{pane_id}/agent-edits", dependencies=[Depends(require_auth)])
+async def post_agent_edit(pane_id: str, body: AgentEdit):
+    ps = monitor.panes.get(pane_id)
+    if not ps:
+        raise HTTPException(404, "pane not found")
+    if ps.pane.agent != body.agent:
+        raise HTTPException(409, "agent does not match pane")
+    await db.log_event("code_edit", ps.pane.session, pane_id, body.agent,
+                       {"diff": body.diff, "session_id": body.session_id,
+                        "tool_use_id": body.tool_use_id})
+    return {"ok": True}
 
 
 @app.get("/api/history", dependencies=[Depends(require_auth)])

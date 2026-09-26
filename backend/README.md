@@ -75,6 +75,7 @@ Client → server (all accept an `id` for correlation):
 ```
 
 ## REST (Bearer token)
-`GET /api/panes` · `GET /api/panes/{id}/screen` · `GET /api/panes/{id}/diff` · `GET /api/history` ·
+`GET /api/panes` · `GET /api/panes/{id}/screen` · `GET /api/panes/{id}/diff` ·
+`GET|POST /api/panes/{id}/agent-edits` (edits captured by the agent hooks) · `GET /api/history` ·
 `POST /api/sessions` · `DELETE /api/sessions/{name}` · `POST /api/panes/{id}/text` ·
 `POST /api/panes/{id}/key/{key}` · `GET|PUT /api/characters` · `GET /health`

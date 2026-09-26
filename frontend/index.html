@@ -28,7 +28,14 @@
     <nav id="map" class="map" aria-label="Room map"></nav>
     <div class="bar-side end">
       <label class="toggle"><input type="checkbox" id="showShells"> shells</label>
-      <button class="btn ghost" id="soundBtn" title="Sound when input is needed">🔔</button>
+      <button class="btn ghost bell" id="soundBtn" title="Sound when an agent asks for permission or finishes">
+        <svg viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true">
+          <path class="b-body" d="M7 2h2v1h1v1h1v5h1v2h1v1H3v-1h1V9h1V4h1V3h1z"/>
+          <path class="b-shine" d="M6 5h1v4H6z"/>
+          <path class="b-clap" d="M7 13h2v1H7z"/>
+          <path class="b-off" d="M2 14h1v-1h1v-1h1v-1h1v-1h1V9h1V8h1V7h1V6h1V5h1V4h1V3h1V2h1v1h-1v1h-1v1h-1v1h-1v1h-1v1h-1v1H9v1H8v1H7v1H6v1H5v1H4v1H3v1H2z"/>
+        </svg>
+      </button>
       <button class="btn" id="newRoomBtn">+ Room</button>
     </div>
   </footer>
@@ -71,11 +78,11 @@
 
     <section class="tab tab-code" data-tab="code">
       <div class="code-head">
-        <div><strong>Uncommitted Git changes</strong><div class="hint" id="codePath"></div></div>
+        <div><strong id="codeTitle">Changes made by this agent</strong><div class="hint" id="codePath"></div></div>
         <button class="btn ghost" id="codeRefresh">Refresh</button>
       </div>
-      <p class="hint" id="codeStatus">Press “Refresh” to load the project diff.</p>
-      <pre id="codeDiff" hidden></pre>
+      <p class="hint" id="codeStatus">Refresh to load this agent’s edits.</p>
+      <div id="codeDiff" class="agent-diffs" hidden></div>
     </section>
 
     <section class="tab tab-char" data-tab="char">
@@ -110,6 +117,9 @@
         <select name="command">
           <option value="claude">claude</option>
           <option value="codex">codex</option>
+          <option value="gemini">gemini</option>
+          <option value="opencode">opencode</option>
+          <option value="copilot">copilot</option>
           <option value="">(shell only)</option>
           <option value="__custom">other command…</option>
         </select>
@@ -118,6 +128,17 @@
       <menu>
         <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
         <button class="btn" value="ok">Open</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="deleteRoomDialog" class="dlg">
+    <form method="dialog">
+      <h2>Abandon this room?</h2>
+      <p class="confirm-copy">Closing <strong id="deleteRoomName"></strong> will stop every agent inside.</p>
+      <menu>
+        <button class="btn ghost" value="cancel">Keep room</button>
+        <button class="btn danger" value="delete">Abandon room</button>
       </menu>
     </form>
   </dialog>
