@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Arranca el backend + web en http://localhost:8765 (accesible también desde Windows).
+# Starts the backend + web on http://localhost:8765 (also reachable from Windows).
 set -euo pipefail
 cd "$(dirname "$0")/../backend"
 set -a; source .env; set +a

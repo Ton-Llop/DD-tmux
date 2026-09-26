@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Opción rápida: Postgres dentro de WSL (mientras no lo tengas en el homelab).
+# Quick option: Postgres inside WSL (until you have it on the homelab).
 set -euo pipefail
 sudo apt-get install -y postgresql
 sudo service postgresql start

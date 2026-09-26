@@ -1,4 +1,4 @@
-"""Bucle que escanea tmux, detecta cambios y los emite por WS + Postgres."""
+"""Loop that scans tmux, detects changes and emits them over WS + Postgres."""
 import asyncio
 import hashlib
 import logging
@@ -13,7 +13,7 @@ from .hub import hub
 log = logging.getLogger("dungeon.monitor")
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07")
-# Pantallas donde el agente espera una decisión tuya -> estado "needs_input"
+# Screens where the agent awaits your decision -> "needs_input" state
 NEEDS_INPUT_RE = re.compile(
     r"do you want to|allow (this|once|always)|\(y/n\)|\[y/n\]|approve|"
     r"yes, and don't ask|press enter to|waiting for (your )?(approval|input)",
@@ -35,7 +35,7 @@ class PaneState:
     state: str = "idle"          # idle | working | needs_input | dead
     tail: list[str] = field(default_factory=list)
     last_sent: tuple = ()
-    prompt: str = ""             # línea de la pregunta cuando needs_input
+    prompt: str = ""             # the question line when needs_input
 
     def public(self) -> dict:
         return self.pane.to_dict() | {"state": self.state, "tail": self.tail, "prompt": self.prompt,
@@ -58,22 +58,22 @@ class Monitor:
         return [ps.public() for ps in self.panes.values()]
 
     def character_for(self, pane: tmux.Pane) -> str | None:
-        """Pane concreto > default del tipo de agente > None (el frontend usa su fallback)."""
+        """Specific pane > agent-type default > None (the frontend uses its fallback)."""
         return (self.characters.get(f"slot:{pane.slot}")
                 or self.characters.get(f"agent:{pane.agent}"))
 
     async def set_character(self, target: str, character: str | None):
         if not TARGET_RE.match(target):
-            raise ValueError(f"target inválido: {target}")
+            raise ValueError(f"invalid target: {target}")
         if character is not None and not CHAR_RE.match(character):
-            raise ValueError(f"id de personaje inválido: {character}")
+            raise ValueError(f"invalid character id: {character}")
         await db.set_character(target, character)
         if character:
             self.characters[target] = character
         else:
             self.characters.pop(target, None)
         if target.startswith("agent:") and character:
-            # "Todos los X" manda: quita las asignaciones sueltas de los panes de ese tipo
+            # "All X" wins: clears the individual assignments of panes of that type
             agent = target.removeprefix("agent:")
             for ps in self.panes.values():
                 slot = f"slot:{ps.pane.slot}"
@@ -102,7 +102,7 @@ class Monitor:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                log.exception("fallo en tick")
+                log.exception("tick failed")
             await asyncio.sleep(settings.poll_interval)
 
     async def tick(self):
@@ -110,7 +110,7 @@ class Monitor:
         panes = await tmux.list_panes()
         current = {p.pane_id: p for p in panes}
 
-        # --- sesiones nuevas / cerradas
+        # --- new / closed sessions
         sess = {p.session for p in panes}
         for s in sess - self.sessions:
             await db.touch_session(s)
@@ -122,14 +122,14 @@ class Monitor:
             await hub.broadcast({"type": "session_close", "session": s})
         self.sessions = sess
 
-        # --- panes cerrados
+        # --- closed panes
         for pid in set(self.panes) - set(current):
             ps = self.panes.pop(pid)
             await self._persist(ps, force=True)
             await db.log_event("pane_close", ps.pane.session, pid, ps.pane.agent)
             await hub.broadcast({"type": "pane_close", "pane_id": pid, "session": ps.pane.session})
 
-        # --- capturas en paralelo
+        # --- captures in parallel
         screens = await asyncio.gather(*(tmux.capture(pid) for pid in current),
                                        return_exceptions=True)
         for (pid, pane), screen in zip(current.items(), screens):
@@ -147,14 +147,14 @@ class Monitor:
                     await db.log_event("agent_change", pane.session, pid, pane.agent,
                                        {"from": ps.pane.agent})
                 ps.pane = pane
-                if changed:  # p.ej. lanzas `claude` en una shell: el personaje entra en la sala
+                if changed:  # e.g. you launch `claude` in a shell: the character walks into the room
                     await hub.broadcast({"type": "pane_update", "pane": ps.public()})
 
             digest = hashlib.blake2b(screen.encode(), digest_size=12).hexdigest()
             if digest != ps.digest:
                 ps.digest, ps.screen, ps.last_change = digest, screen, now
                 plain = strip_ansi(screen).rstrip("\n").splitlines()
-                ps.tail = [l for l in plain if l.strip()][-12:]  # el frontend elige las que tienen texto
+                ps.tail = [l for l in plain if l.strip()][-12:]  # the frontend picks the ones with text
                 await hub.to_subscribers(pid, {"type": "screen", "pane_id": pid, "content": screen})
 
             await self._update_state(ps, now)
@@ -162,7 +162,7 @@ class Monitor:
                 await self._persist(ps)
 
     async def _update_state(self, ps: PaneState, now: float):
-        # capture-pane incluye las filas vacías del final del pane: se quitan antes de mirar el fondo
+        # capture-pane includes the pane's trailing empty rows: strip them before looking at the bottom
         lines = strip_ansi(ps.screen).rstrip().splitlines()
         bottom = lines[-15:]
         asking = [l.strip() for l in bottom if NEEDS_INPUT_RE.search(l)]
@@ -179,9 +179,9 @@ class Monitor:
             old, ps.state = ps.state, new
             await db.log_event("state", ps.pane.session, ps.pane.pane_id, ps.pane.agent,
                                {"from": old, "to": new})
-            if new in ("idle", "needs_input"):  # guarda el resultado final del turno
+            if new in ("idle", "needs_input"):  # stores the turn's final result
                 await self._persist(ps, force=True)
-        # estado + tail a todos los clientes (alimenta salas y bocadillos), solo si cambió algo
+        # state + tail to every client (feeds rooms and bubbles), only if something changed
         if (ps.state, ps.digest) != ps.last_sent:
             ps.last_sent = (ps.state, ps.digest)
             await hub.broadcast({"type": "state", "pane_id": ps.pane.pane_id,

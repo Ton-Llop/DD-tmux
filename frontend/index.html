@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -14,26 +14,26 @@
 <body>
   <main id="rooms" class="rooms">
     <div class="empty" id="empty">
-      <p>El torreón está vacío.</p>
-      <p class="muted">Abre una sesión tmux o crea una sala.</p>
+      <p>The keep is empty.</p>
+      <p class="muted">Open a tmux session or create a room.</p>
     </div>
   </main>
-  <!-- Barra de abajo: estado a la izquierda, mapa de la mazmorra (una sala por sesión tmux) y controles -->
+  <!-- Bottom bar: status on the left, dungeon map (one room per tmux session) and controls -->
   <footer class="bar">
     <div class="bar-side">
       <div class="brand"><span class="flame"></span>DD<span class="dot">·</span>tmux</div>
-      <div class="conn" id="conn"><i></i><span>desconectado</span></div>
+      <div class="conn" id="conn"><i></i><span>disconnected</span></div>
       <div class="alerts" id="alerts" hidden></div>
     </div>
-    <nav id="map" class="map" aria-label="Mapa de salas"></nav>
+    <nav id="map" class="map" aria-label="Room map"></nav>
     <div class="bar-side end">
       <label class="toggle"><input type="checkbox" id="showShells"> shells</label>
-      <button class="btn ghost" id="soundBtn" title="Sonido al pedir input">🔔</button>
-      <button class="btn" id="newRoomBtn">+ Sala</button>
+      <button class="btn ghost" id="soundBtn" title="Sound when input is needed">🔔</button>
+      <button class="btn" id="newRoomBtn">+ Room</button>
     </div>
   </footer>
 
-  <!-- Panel lateral del personaje -->
+  <!-- Character side panel -->
   <aside id="panel" class="panel" hidden>
     <header class="panel-head">
       <div class="who">
@@ -43,12 +43,13 @@
           <div class="p-meta" id="pMeta"></div>
         </div>
       </div>
-      <button class="btn ghost close" id="panelClose" aria-label="Cerrar">✕</button>
+      <button class="btn ghost close" id="panelClose" aria-label="Close">✕</button>
     </header>
     <nav class="tabs">
       <button data-tab="term" class="on">Terminal</button>
-      <button data-tab="char">Personaje</button>
-      <button data-tab="hist">Crónica</button>
+      <button data-tab="code">Code</button>
+      <button data-tab="char">Character</button>
+      <button data-tab="hist">Chronicle</button>
     </nav>
 
     <section class="tab tab-term on" data-tab="term">
@@ -62,52 +63,61 @@
         <button data-text="y">y</button><button data-text="n">n</button>
       </div>
       <form class="send" id="sendForm">
-        <textarea id="sendText" rows="2" placeholder="Orden para el agente… (Ctrl+Enter envía)"></textarea>
-        <button class="btn" type="submit">Enviar</button>
+        <textarea id="sendText" rows="2" placeholder="Orders for the agent… (Ctrl+Enter sends)"></textarea>
+        <button class="btn" type="submit">Send</button>
       </form>
-      <p class="hint">Clic en la terminal para teclear directo.</p>
+      <p class="hint">Click the terminal to type directly.</p>
+    </section>
+
+    <section class="tab tab-code" data-tab="code">
+      <div class="code-head">
+        <div><strong>Uncommitted Git changes</strong><div class="hint" id="codePath"></div></div>
+        <button class="btn ghost" id="codeRefresh">Refresh</button>
+      </div>
+      <p class="hint" id="codeStatus">Press “Refresh” to load the project diff.</p>
+      <pre id="codeDiff" hidden></pre>
     </section>
 
     <section class="tab tab-char" data-tab="char">
       <div class="char-grid" id="charGrid"></div>
       <div class="char-actions">
-        <button class="btn" id="assignSlot">Solo este panel</button>
-        <button class="btn" id="assignAgent">Todos los <span id="agentName"></span></button>
-        <button class="btn ghost" id="assignClear">Quitar asignación</button>
+        <button class="btn" id="assignSlot">This pane only</button>
+        <button class="btn" id="assignAgent">All <span id="agentName"></span></button>
+        <button class="btn ghost" id="assignClear">Clear assignment</button>
       </div>
       <p class="hint" id="charSource"></p>
     </section>
 
     <section class="tab tab-hist" data-tab="hist">
       <div class="hist-filters">
-        <label><input type="checkbox" value="input" checked> órdenes</label>
-        <label><input type="checkbox" value="output" checked> salidas</label>
-        <label><input type="checkbox" value="state"> estados</label>
-        <label><input type="checkbox" value="key"> teclas</label>
+        <label><input type="checkbox" value="input" checked> orders</label>
+        <label><input type="checkbox" value="output" checked> output</label>
+        <label><input type="checkbox" value="state"> states</label>
+        <label><input type="checkbox" value="key"> keys</label>
       </div>
       <ol class="hist" id="hist"></ol>
-      <button class="btn ghost" id="histMore">Más antiguo…</button>
+      <button class="btn ghost" id="histMore">Older…</button>
     </section>
   </aside>
 
-  <!-- Nueva sala -->
+  <!-- New room -->
   <dialog id="newRoom" class="dlg">
     <form method="dialog" id="newRoomForm">
-      <h2>Nueva sala</h2>
-      <label>Nombre <input name="name" required pattern="[A-Za-z0-9_.\-]{1,64}" placeholder="api-refactor"></label>
-      <label>Directorio <input name="cwd" placeholder="~/code/proyecto"></label>
-      <label>Invocar
+      <h2>New room</h2>
+      <label>Name <input name="name" required pattern="[A-Za-z0-9_.\-]{1,64}" placeholder="api-refactor"></label>
+      <label>Directory <input name="cwd" placeholder="~/code/project"></label>
+      <label>Launch
         <select name="command">
           <option value="claude">claude</option>
           <option value="codex">codex</option>
-          <option value="">(solo shell)</option>
-          <option value="__custom">otro comando…</option>
+          <option value="">(shell only)</option>
+          <option value="__custom">other command…</option>
         </select>
       </label>
-      <label class="custom-cmd" hidden>Comando <input name="custom"></label>
+      <label class="custom-cmd" hidden>Command <input name="custom"></label>
       <menu>
-        <button class="btn ghost" value="cancel" formnovalidate>Cancelar</button>
-        <button class="btn" value="ok">Abrir</button>
+        <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn" value="ok">Open</button>
       </menu>
     </form>
   </dialog>
@@ -115,10 +125,10 @@
   <!-- Login -->
   <dialog id="login" class="dlg">
     <form method="dialog" id="loginForm">
-      <h2>Contraseña del torreón</h2>
-      <p class="muted">El <code>TD_AUTH_TOKEN</code> de tu <code>.env</code>.</p>
+      <h2>Password to the keep</h2>
+      <p class="muted">The <code>TD_AUTH_TOKEN</code> from your <code>.env</code>.</p>
       <input name="token" type="password" required minlength="24" autocomplete="current-password">
-      <menu><button class="btn" value="ok">Entrar</button></menu>
+      <menu><button class="btn" value="ok">Enter</button></menu>
     </form>
   </dialog>
 

@@ -25,8 +25,8 @@ CREATE INDEX IF NOT EXISTS events_session_ts ON events (session, ts DESC);
 CREATE INDEX IF NOT EXISTS events_pane_ts    ON events (pane_id, ts DESC);
 CREATE INDEX IF NOT EXISTS events_kind_ts    ON events (kind, ts DESC);
 
--- Personaje asignado. target = 'slot:<sesion>:<ventana>.<pane>' (un pane concreto)
---                            | 'agent:<tipo>'                  (por defecto para claude, codex...)
+-- Assigned character. target = 'slot:<session>:<window>.<pane>' (a specific pane)
+--                             | 'agent:<type>'                   (default for claude, codex...)
 CREATE TABLE IF NOT EXISTS characters (
     target     TEXT PRIMARY KEY,
     character  TEXT NOT NULL,
@@ -100,7 +100,7 @@ async def set_character(target: str, character: str | None):
             """INSERT INTO characters (target, character) VALUES ($1,$2)
                ON CONFLICT (target) DO UPDATE SET character = $2, updated_at = now()""",
             target, character)
-    else:  # None = quitar asignación (vuelve al default)
+    else:  # None = clear assignment (back to the default)
         await pool.execute("DELETE FROM characters WHERE target = $1", target)
 
 

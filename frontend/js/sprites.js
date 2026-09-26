@@ -1,20 +1,20 @@
-// Personajes y fondos: todo sale de frontend/sprites/custom/manifest.json (ver README).
+// Characters and backgrounds: everything comes from frontend/sprites/custom/manifest.json (see README).
 
-// Sin manifest (clon recién hecho) la web sigue funcionando con este marcador.
-const PLACEHOLDER = { id: "?", name: "Sin personajes", blurb: "crea sprites/custom/manifest.json", kind: "images",
+// Without a manifest (fresh clone) the web still works with this placeholder.
+const PLACEHOLDER = { id: "?", name: "No characters", blurb: "create sprites/custom/manifest.json", kind: "images",
                       images: {}, height: 96, animated: false };
 
 /**
- * Formato:
+ * Format:
  * {
  *   "characters": {
- *     "mi-heroe": { "name": "Mi héroe",
- *                   "images": { "idle": "custom/heroe_idle.gif", "working": "custom/heroe_ataque.gif",
- *                               "needs_input": "custom/heroe_idle.gif" },
+ *     "my-hero": { "name": "My hero",
+ *                   "images": { "idle": "custom/hero_idle.gif", "working": "custom/hero_attack.gif",
+ *                               "needs_input": "custom/hero_idle.gif" },
  *                   "height": 96, "animated": true }
  *   },
- *   "defaults": { "claude": "mi-heroe" },   // por tipo de agente; "other-agent" = resto de agentes
- *   "backgrounds": [ { "src": "custom/bg/mazmorra.jpg", "fx": "dungeon" } ]   // fx: dungeon|forest|storm|ashes
+ *   "defaults": { "claude": "my-hero" },    // per agent type; "other-agent" = every other agent
+ *   "backgrounds": [ { "src": "custom/bg/dungeon.jpg", "fx": "dungeon" } ]   // fx: dungeon|forest|storm|ashes
  * }
  */
 export async function loadRegistry() {
@@ -33,12 +33,12 @@ export async function loadRegistry() {
       defaults = m.defaults || {};
       backgrounds = (m.backgrounds || []).map((b) => ({ src: "sprites/" + b.src.replace(/^\/+/, ""), fx: b.fx }));
     }
-  } catch { /* sin manifest: marcador */ }
+  } catch { /* no manifest: placeholder */ }
   if (!Object.keys(chars).length) chars["?"] = PLACEHOLDER;
   return { chars, defaults, backgrounds };
 }
 
-/** Crea el <img> del personaje para un estado. */
+/** Builds the character's <img> for a state. */
 export function spriteImg(ch, state = "idle") {
   const img = document.createElement("img");
   img.className = "sprite custom";

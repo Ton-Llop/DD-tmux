@@ -1,4 +1,4 @@
-"""Gestión de clientes WebSocket y sus suscripciones a panes."""
+"""WebSocket clients and their pane subscriptions."""
 import asyncio
 import json
 
@@ -8,7 +8,7 @@ from fastapi import WebSocket
 class Client:
     def __init__(self, ws: WebSocket):
         self.ws = ws
-        self.subs: set[str] = set()       # panes cuyo output completo recibe
+        self.subs: set[str] = set()       # panes whose full output it receives
         self.lock = asyncio.Lock()
 
     async def send(self, msg: dict):

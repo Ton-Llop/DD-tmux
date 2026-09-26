@@ -10,8 +10,8 @@ const LS = {
 
 const AGENT_LABEL = { claude: "Claude", codex: "Codex", gemini: "Gemini", aider: "Aider", opencode: "OpenCode",
   cursor: "Cursor", copilot: "Copilot", qwen: "Qwen", goose: "Goose", crush: "Crush", amp: "Amp", droid: "Droid",
-  kiro: "Kiro", cline: "Cline", "other-agent": "Agente", shell: "Shell" };
-const STATE_LABEL = { working: "trabajando", idle: "en reposo", needs_input: "¡pide órdenes!", dead: "caído" };
+  kiro: "Kiro", cline: "Cline", "other-agent": "Agent", shell: "Shell" };
+const STATE_LABEL = { working: "working", idle: "resting", needs_input: "awaiting orders!", dead: "fallen" };
 const LONG_IDLE_MS = 60_000;
 
 const S = {
@@ -20,9 +20,9 @@ const S = {
   assignments: {},           // target -> character
   registry: { chars: {}, defaults: {} },
   selected: null,            // pane_id
-  pick: null,                // personaje marcado en la pestaña Personaje
-  room: LS.get("room"),       // sesión que se ve a pantalla completa
-  mapOpen: null,              // sesión con el bocadillo del mapa desplegado
+  pick: null,                // character picked in the Character tab
+  room: LS.get("room"),       // session shown full screen
+  mapOpen: null,              // session whose map bubble is expanded
   showShells: LS.get("showShells") === "1",
   sound: LS.get("sound") !== "0",
   rpcId: 0, pending: new Map(),
@@ -40,9 +40,9 @@ function connect() {
   ws.onclose = async () => {
     setConn(false);
     if (!S.gotHello && S.retry >= 1) {
-      // ¿token malo o servidor caído/reiniciando? Solo se borra el token si el servidor responde.
+      // bad token, or server down/restarting? The token is only cleared if the server answers.
       const up = await fetch("health", { cache: "no-store" }).then((r) => r.ok, () => false);
-      if (up) { LS.del("token"); return askToken("Token rechazado."); }
+      if (up) { LS.del("token"); return askToken("Token rejected."); }
     }
     S.retry++;
     setTimeout(connect, Math.min(1000 * 2 ** S.retry, 15000));
@@ -52,7 +52,7 @@ function connect() {
 function rpc(msg) {
   const id = ++S.rpcId;
   return new Promise((resolve, reject) => {
-    if (!S.ws || S.ws.readyState !== 1) return reject(new Error("sin conexión"));
+    if (!S.ws || S.ws.readyState !== 1) return reject(new Error("not connected"));
     S.pending.set(id, { resolve, reject });
     S.ws.send(JSON.stringify({ ...msg, id }));
     setTimeout(() => S.pending.has(id) && (S.pending.delete(id), reject(new Error("timeout"))), 10000);
@@ -92,7 +92,7 @@ function onMessage(m) {
     case "characters":
       S.assignments = m.assignments;
       renderAll();
-      if (S.selected) renderCharTab();
+      if (S.selected) { renderPanelHead(); renderCharTab(); }
       break;
     case "screen":
       if (m.pane_id === S.selected) writeScreen(m.content);
@@ -109,30 +109,30 @@ function onMessage(m) {
 function setConn(on) {
   S.connected = on;
   $("#conn").classList.toggle("on", on);
-  $("#conn span").textContent = on ? "conectado" : "reconectando…";
+  $("#conn span").textContent = on ? "connected" : "reconnecting…";
 }
 
-// ================= personajes =================
+// ================= characters =================
 function characterFor(p) {
-  // primer candidato que exista (un id borrado del manifest cae al siguiente)
+  // first candidate that exists (an id removed from the manifest falls through to the next)
   const ids = [S.assignments[`slot:${p.slot}`], S.assignments[`agent:${p.agent}`],
                S.registry.defaults[p.agent], p.agent !== "shell" && S.registry.defaults["other-agent"]];
   return S.registry.chars[ids.find((id) => id && S.registry.chars[id])] || Object.values(S.registry.chars)[0];
 }
 function assignmentSource(p) {
-  if (S.assignments[`slot:${p.slot}`]) return "asignado a este panel";
-  if (S.assignments[`agent:${p.agent}`]) return `default para ${AGENT_LABEL[p.agent] || p.agent}`;
-  return "default del juego";
+  if (S.assignments[`slot:${p.slot}`]) return "assigned to this pane";
+  if (S.assignments[`agent:${p.agent}`]) return `default for ${AGENT_LABEL[p.agent] || p.agent}`;
+  return "game default";
 }
 
-// ================= salas =================
+// ================= rooms =================
 function visiblePanes() {
   return [...S.panes.values()].filter((p) => S.showShells || p.agent !== "shell");
 }
 
 function renderAll() {
   const bySession = new Map();
-  // todas las sesiones existen como sala aunque solo tengan shells ocultas
+  // every session is a room, even if it only has hidden shells
   for (const p of S.panes.values()) if (!bySession.has(p.session)) bySession.set(p.session, []);
   for (const p of visiblePanes()) bySession.get(p.session).push(p);
 
@@ -144,9 +144,9 @@ function renderAll() {
     seen.add(session);
     let room = root.querySelector(`.room[data-session="${CSS.escape(session)}"]`);
     if (!room) { room = buildRoom(session); root.appendChild(room); }
-    if (bgs.length) setScene(room, bgs[(seen.size - 1) % bgs.length]); // salas seguidas, fondos distintos
+    if (bgs.length) setScene(room, bgs[(seen.size - 1) % bgs.length]); // neighbouring rooms get different backgrounds
     const agents = panes.filter((p) => p.agent !== "shell").length;
-    $(".meta", room).textContent = agents ? `${agents} ${agents === 1 ? "agente" : "agentes"}` : "sin agentes";
+    $(".meta", room).textContent = agents ? `${agents} ${agents === 1 ? "agent" : "agents"}` : "no agents";
     const party = $(".party", room);
     const keep = new Set();
     panes.sort((a, b) => a.slot.localeCompare(b.slot, undefined, { numeric: true }));
@@ -159,7 +159,7 @@ function renderAll() {
         hero ? hero.replaceWith(fresh) : party.appendChild(fresh);
         hero = fresh;
       }
-      party.appendChild(hero); // mantiene orden
+      party.appendChild(hero); // keeps order
       updateHero(p);
     }
     $$(".hero", party).forEach((h) => !keep.has(h.dataset.pane) && h.remove());
@@ -173,29 +173,29 @@ function renderAll() {
   fitStage();
 }
 
-// ================= mapa =================
+// ================= map =================
 function goRoom(session) {
   S.room = session; LS.set("room", session);
   renderAll();
 }
 
-// Líneas de la TUI que no dicen nada: bordes, prompts vacíos, ayudas de teclas.
+// TUI lines that say nothing: borders, empty prompts, key hints.
 const NOISE = /^[\s─━│┃┌┐└┘├┤╭╮╰╯═║>›❯▶•·.…_-]*$|for shortcuts|to interrupt|bypass permissions|auto-accept|shift\+tab|ctrl\+/i;
 
-/** Últimas `n` líneas con contenido de un pane (la pregunta, si está pidiendo permiso). */
+/** Last `n` lines with content from a pane (the question, if it is asking for permission). */
 function activity(p, n) {
   if (p.state === "needs_input" && p.prompt) return [p.prompt.trim()];
   return meaningful((p.tail || []).join("\n"), n);
 }
 
-/** Últimas `n` líneas de un texto de terminal que dicen algo (sin bordes ni ayudas de la TUI). */
+/** Last `n` lines of terminal text that say something (no TUI borders or hints). */
 function meaningful(text, n) {
   const out = [];
   const lines = text.split("\n");
   for (const line of lines.reverse()) {
     const t = line.replace(/\s{2,}/g, " ").trim();
     const letters = (t.match(/\p{L}/gu) || []).length;
-    // con texto de verdad: al menos 3 letras y que no sea casi todo símbolos (bordes, barras…)
+    // real text: at least 3 letters and not mostly symbols (borders, bars…)
     if (letters >= 3 && letters / t.length > 0.3 && !NOISE.test(t)) out.unshift(t.length > 160 ? t.slice(0, 159) + "…" : t);
     if (out.length >= n) break;
   }
@@ -205,7 +205,7 @@ function meaningful(text, n) {
 function renderMap() {
   const map = $("#map");
   const rooms = $$(".room", $("#rooms")).map((r) => r.dataset.session);
-  map.hidden = rooms.length < 2; // con una sola sala no hay a dónde ir
+  map.hidden = rooms.length < 2; // with a single room there is nowhere to go
   map.replaceChildren();
   rooms.forEach((session, i) => {
     if (i) map.insertAdjacentHTML("beforeend", "<span class='corr'><i></i><i></i><i></i></span>");
@@ -216,7 +216,7 @@ function renderMap() {
     const b = document.createElement("button");
     b.className = "map-room" + (session === S.room ? " current" : "")
       + (alert ? " alert" : busy ? " busy" : ps.length ? " resting" : "");
-    b.title = `${session} — ${ps.length} ${ps.length === 1 ? "agente" : "agentes"}`;
+    b.title = `${session} — ${ps.length} ${ps.length === 1 ? "agent" : "agents"}`;
     b.innerHTML = "<span class='lbl'></span>";
     $(".lbl", b).textContent = session;
     b.onclick = () => goRoom(session);
@@ -226,7 +226,7 @@ function renderMap() {
   });
 }
 
-/** Bocadillo sobre la sala: qué hace (plegado) o todos sus agentes con sus últimas líneas (desplegado). */
+/** Bubble over the room: what it is doing (collapsed) or all its agents with their last lines (expanded). */
 function mapActivity(session, ps) {
   const open = S.mapOpen === session;
   const box = document.createElement("div");
@@ -250,20 +250,20 @@ function mapActivity(session, ps) {
     const t = document.createElement("div");
     t.className = "act-title"; t.textContent = session;
     box.append(t, ...ps.map((p) => row(p, 4)));
-  } else { // plegado: el que pide permiso primero, si no el primero que trabaja
+  } else { // collapsed: whoever asks for permission first, otherwise the first one working
     const p = ps.find((x) => x.state === "needs_input") || ps.find((x) => x.state === "working");
     box.append(row(p, 1));
   }
   return box;
 }
-document.addEventListener("click", (e) => { // clic fuera: se pliega
+document.addEventListener("click", (e) => { // click outside: collapse
   if (S.mapOpen && !e.target.closest(".map-act")) { S.mapOpen = null; renderMap(); }
 });
 
-const MAX_ZOOM = 1; // tamaño de los personajes: 1 = pequeños y se ve todo el fondo; 2, 3… = más grandes
+const MAX_ZOOM = 1; // character size: 1 = small, whole background visible; 2, 3… = bigger
 
-/** Amplía la sala visible a zoom ENTERO (el pixel art no se deforma), hasta MAX_ZOOM, y estira el escenario
- *  para llenar toda la ventana. Si los héroes no caben a lo ancho baja el zoom; a 1x, en último caso, fraccionario. */
+/** Zooms the visible room by a WHOLE factor (pixel art stays crisp), up to MAX_ZOOM, and stretches the stage
+ *  to fill the window. If the heroes do not fit across it lowers the zoom; at 1x, as a last resort, fractional. */
 function fitStage() {
   const room = $(".room.current"), main = $("#rooms");
   if (!room) return;
@@ -271,7 +271,7 @@ function fitStage() {
   room.style.setProperty("--z", 1); stage.style.height = "";
   const base = stage.offsetHeight, avail = main.getBoundingClientRect().bottom - stage.getBoundingClientRect().top;
   const apply = (z) => { room.style.setProperty("--z", z); stage.style.height = avail / z + "px"; };
-  // ancho real de los héroes (scrollWidth incluye adornos que sobresalen, como las "z", y engaña)
+  // real width of the heroes (scrollWidth includes overhanging bits like the "z" and lies)
   const need = () => [...party.children].reduce((w, h) => w + h.offsetWidth + 8, -8);
   const tooWide = () => need() > party.clientWidth;
   let z = Math.max(1, Math.min(MAX_ZOOM, Math.floor(avail / base)));
@@ -279,8 +279,8 @@ function fitStage() {
   while (z > 1 && tooWide()) apply(--z);
   if (tooWide()) apply(party.clientWidth / need());
 }
-new ResizeObserver(() => fitStage()).observe($("#rooms")); // ventana o panel lateral
-document.addEventListener("keydown", (e) => { // ← → para cambiar de sala (fuera de campos de texto y terminal)
+new ResizeObserver(() => fitStage()).observe($("#rooms")); // window or side panel
+document.addEventListener("keydown", (e) => { // ← → to change room (outside text fields and the terminal)
   if (!["ArrowLeft", "ArrowRight"].includes(e.key) || e.target.closest("input, textarea, select, #term")) return;
   const rooms = $$(".room", $("#rooms")).map((r) => r.dataset.session), i = rooms.indexOf(S.room);
   const next = rooms[i + (e.key === "ArrowRight" ? 1 : -1)];
@@ -293,28 +293,27 @@ function buildRoom(session) {
   room.dataset.session = session;
   room.innerHTML = `
     <header class="plaque"><span class="name"></span><span class="meta"></span>
-      <button class="btn ghost danger kill" title="Cerrar sesión tmux">✕</button></header>
+      <button class="btn ghost danger kill" title="Kill tmux session">✕</button></header>
     <div class="stage">
       <div class="torch l"><div class="fire"></div><div class="stick"></div></div>
       <div class="torch r"><div class="fire"></div><div class="stick"></div></div>
-      <div class="campfire"><div class="fire"></div><div class="logs"></div></div>
       <div class="party"></div>
     </div>`;
   $(".name", room).textContent = session;
   $(".kill", room).onclick = async () => {
-    if (!confirm(`¿Cerrar la sesión tmux "${session}"? Mata todo lo que corre dentro.`)) return;
+    if (!confirm(`Kill tmux session "${session}"? Everything running inside dies.`)) return;
     try { await rpc({ op: "kill_session", name: session }); } catch (e) { toast(e.message); }
   };
   return room;
 }
 
-// ================= fondos animados =================
-// Partículas por ambiente: n = cantidad; el resto, rangos [min, max] que se sortean por partícula.
+// ================= animated backgrounds =================
+// Particles per mood: n = count; the rest are [min, max] ranges drawn per particle.
 const FX = {
-  storm:   { n: 70, d: [0.5, 0.9] },                                    // lluvia + relámpagos
-  forest:  { n: 16, d: [4, 9], s: [2, 4], dx: [-40, 40], y: [30, 80] }, // luciérnagas
-  dungeon: { n: 22, d: [5, 10], s: [2, 3], dx: [-30, 30] },             // brasas que suben
-  ashes:   { n: 28, d: [8, 16], s: [2, 4], dx: [-60, 60] },             // ceniza que cae
+  storm:   { n: 70, d: [0.5, 0.9] },                                    // rain + lightning
+  forest:  { n: 16, d: [4, 9], s: [2, 4], dx: [-40, 40], y: [30, 80] }, // fireflies
+  dungeon: { n: 22, d: [5, 10], s: [2, 3], dx: [-30, 30] },             // rising embers
+  ashes:   { n: 28, d: [8, 16], s: [2, 4], dx: [-60, 60] },             // falling ash
 };
 const rnd = ([a, b]) => a + Math.random() * (b - a);
 
@@ -359,7 +358,7 @@ function updateHero(p) {
   const ch = characterFor(p);
   el.className = `hero state-${p.state}` + (S.selected === p.pane_id ? " selected" : "")
     + (p.state === "idle" && Date.now() / 1000 - (p.last_change || 0) > LONG_IDLE_MS / 1000 ? " long-idle" : "");
-  if (ch.kind === "images") { // sprites propios: imagen por estado
+  if (ch.kind === "images") { // custom sprites: one image per state
     const img = $(".sprite", el), want = ch.images[p.state] || ch.images.idle;
     if (want && !img.src.endsWith(want)) img.src = want;
   }
@@ -381,12 +380,12 @@ function updateAlerts() {
   const n = [...S.panes.values()].filter((p) => p.state === "needs_input").length;
   const a = $("#alerts");
   a.hidden = !n;
-  a.textContent = `${n} ${n === 1 ? "espera" : "esperan"} órdenes`;
+  a.textContent = `${n} awaiting orders`;
   document.title = (n ? `(${n}) ` : "") + "DD-tmux";
   renderMap();
 }
 
-setInterval(() => S.panes.forEach(updateHero), 15000); // refresca "zzz"
+setInterval(() => S.panes.forEach(updateHero), 15000); // refreshes "zzz"
 
 // ================= panel =================
 let term, fit;
@@ -409,7 +408,7 @@ function sizeTerm() {
   const p = S.panes.get(S.selected);
   const box = $(".term-wrap").getBoundingClientRect();
   const cols = p?.width || 120;
-  // ajusta fuente para que quepan las columnas reales del pane
+  // fit the font so the pane's real columns fit
   const fs = Math.max(8, Math.min(14, Math.floor((box.width - 12) / (cols * 0.6))));
   if (term.options.fontSize !== fs) term.options.fontSize = fs;
   const dims = fit.proposeDimensions();
@@ -421,7 +420,7 @@ function writeScreen(content) {
   term.write("\x1b[H\x1b[2J\x1b[3J" + body);
 }
 
-// teclado directo en la terminal -> tmux
+// direct typing in the terminal -> tmux
 const KEYMAP = { "\r": "Enter", "\x7f": "BSpace", "\b": "BSpace", "\x1b": "Escape", "\t": "Tab",
   "\x03": "C-c", "\x04": "C-d", "\x0c": "C-l", "\x12": "C-r", "\x1a": "C-z",
   "\x1b[A": "Up", "\x1b[B": "Down", "\x1b[C": "Right", "\x1b[D": "Left", "\x1b[Z": "S-Tab",
@@ -436,8 +435,8 @@ function flushTyped() {
 function onTermData(d) {
   if (!S.selected) return;
   if (KEYMAP[d]) { flushTyped(); return sendKey(KEYMAP[d]); }
-  if (d.startsWith("\x1b")) return; // secuencia no soportada
-  if (d.length > 1 && /[\r\n]/.test(d)) { flushTyped(); typed = d.replace(/\r\n?/g, "\n"); return flushTyped(); } // pegado
+  if (d.startsWith("\x1b")) return; // unsupported sequence
+  if (d.length > 1 && /[\r\n]/.test(d)) { flushTyped(); typed = d.replace(/\r\n?/g, "\n"); return flushTyped(); } // paste
   typed += d.replace(/[\x00-\x1f]/g, "");
   clearTimeout(typedTimer);
   typedTimer = setTimeout(flushTyped, 40);
@@ -476,7 +475,11 @@ function renderPanelHead() {
   if (!p) return;
   const ch = characterFor(p);
   const portrait = $("#pPortrait");
-  portrait.replaceChildren(spriteImg(ch, p.state));
+  if (portrait.dataset.char !== ch.id || portrait.dataset.state !== p.state) {
+    portrait.dataset.char = ch.id;
+    portrait.dataset.state = p.state;
+    portrait.replaceChildren(spriteImg(ch, p.state));
+  }
   $("#pName").textContent = ch.name;
   $("#pMeta").innerHTML = "";
   const line1 = document.createElement("div");
@@ -490,7 +493,7 @@ function renderPanelHead() {
   $("#pMeta").append(line1, path);
 }
 
-// ---------- pestaña personaje ----------
+// ---------- character tab ----------
 function renderCharTab() {
   const p = S.panes.get(S.selected);
   if (!p) return;
@@ -510,11 +513,11 @@ function renderCharTab() {
     grid.append(card);
   }
   $("#agentName").textContent = AGENT_LABEL[p.agent] || p.agent;
-  $("#charSource").textContent = `Ahora: ${cur.name} (${assignmentSource(p)}).`;
+  $("#charSource").textContent = `Now: ${cur.name} (${assignmentSource(p)}).`;
 }
 
 async function assign(target, character) {
-  try { await rpc({ op: "set_character", target, character }); toast("Asignado", true); }
+  try { await rpc({ op: "set_character", target, character }); toast("Assigned", true); }
   catch (e) { toast(e.message); }
 }
 $("#assignSlot").onclick = () => { const p = S.panes.get(S.selected); p && assign(`slot:${p.slot}`, S.pick); };
@@ -525,7 +528,7 @@ $("#assignClear").onclick = async () => {
   await assign(`slot:${p.slot}`, null);
 };
 
-// ---------- pestaña crónica ----------
+// ---------- chronicle tab ----------
 function resetHistory() { S.histBefore = S.histTop = null; S.histEvents = []; $("#hist").replaceChildren(); loadHistory(); }
 async function loadHistory() {
   const p = S.panes.get(S.selected); if (!p) return;
@@ -542,7 +545,7 @@ function renderHistory() {
   const visible = new Set($$(".hist-filters input:checked").map((i) => i.value));
   const groups = [];
   let group;
-  for (const ev of S.histEvents) { // eventos más nuevos primero
+  for (const ev of S.histEvents) { // newest events first
     if (group?.order && ev.id < group.order.id) { groups.push(group); group = null; }
     if (!group) group = { order: null, events: [] };
     if (["input", "key"].includes(ev.kind)) group.order = ev;
@@ -564,16 +567,16 @@ function histTurn(group, visible) {
   head.className = "turn-head";
   const ts = document.createElement("span");
   ts.className = "ts";
-  ts.textContent = new Date((group.order || first).ts).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  ts.textContent = new Date((group.order || first).ts).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
   const label = document.createElement("span");
   label.className = `turn-state ${state}`;
-  label.textContent = group.order ? `Turno · ${STATE_LABEL[state] || state}` : `Actividad · ${STATE_LABEL[state] || state}`;
+  label.textContent = group.order ? `Turn · ${STATE_LABEL[state] || state}` : `Activity · ${STATE_LABEL[state] || state}`;
   head.append(ts, label);
   li.append(head);
   if (group.order && visible.has(group.order.kind)) {
     const command = document.createElement("div");
     command.className = "turn-order";
-    command.textContent = group.order.kind === "input" ? group.order.data.text : `Tecla: ${group.order.data.key}`;
+    command.textContent = group.order.kind === "input" ? group.order.data.text : `Key: ${group.order.data.key}`;
     li.append(command);
   }
   const events = document.createElement("ol");
@@ -587,8 +590,8 @@ function histItem(ev) {
   const ts = new Date(ev.ts);
   const head = document.createElement("span");
   head.innerHTML = `<span class="ts"></span><span class="k ${ev.kind}"></span>`;
-  $(".ts", head).textContent = ts.toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  $(".k", head).textContent = { input: "orden", output: "salida", state: "estado", key: "tecla" }[ev.kind] || ev.kind;
+  $(".ts", head).textContent = ts.toLocaleString("en-GB", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  $(".k", head).textContent = { input: "order", output: "output", state: "state", key: "key" }[ev.kind] || ev.kind;
   const who = ` ${ev.pane_id || ""} ${ev.agent ? "· " + (AGENT_LABEL[ev.agent] || ev.agent) : ""}`;
   if (ev.kind === "output") {
     const det = document.createElement("details");
@@ -608,7 +611,7 @@ function histItem(ev) {
 }
 $("#histMore").onclick = loadHistory;
 
-// Crónica en vivo: con la pestaña abierta, cada 3 s se añaden arriba los eventos nuevos.
+// Live chronicle: while the tab is open, new events are prepended every 3 s.
 setInterval(async () => {
   const p = S.panes.get(S.selected), tab = $('.tab[data-tab="hist"]');
   if (!p || $("#panel").hidden || !tab?.classList.contains("on") || S.histTop == null) return;
@@ -620,15 +623,49 @@ setInterval(async () => {
     S.histTop = fresh[0].id;
     S.histEvents.unshift(...fresh);
     renderHistory();
-  } catch { /* sin conexión: ya reintentará */ }
+  } catch { /* offline: it will retry */ }
 }, 3000);
 $$(".hist-filters input").forEach((i) => (i.onchange = renderHistory));
 
-// ---------- tabs, envío, teclas ----------
+async function loadCode() {
+  const p = S.panes.get(S.selected);
+  if (!p) return;
+  const status = $("#codeStatus"), diff = $("#codeDiff");
+  status.textContent = "Loading changes…";
+  diff.hidden = true;
+  try {
+    const r = await fetch(`/api/panes/${encodeURIComponent(p.pane_id)}/diff`, {
+      headers: { Authorization: `Bearer ${LS.get("token")}` }, cache: "no-store",
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(r.status === 404 && data.detail === "Not Found"
+      ? "Restart the backend to enable Code view (dd-tmux stop && dd-tmux)."
+      : data.detail || r.statusText);
+    if (S.selected !== p.pane_id) return;
+    $("#codePath").textContent = data.path;
+    if (!data.diff) { status.textContent = "No uncommitted code changes."; return; }
+    status.textContent = data.truncated ? "Diff truncated to 500 KB." : "Git diff";
+    diff.replaceChildren(...data.diff.split("\n").map((line) => {
+      const row = document.createElement("span");
+      row.className = line.startsWith("+") && !line.startsWith("+++") ? "diff-add"
+        : line.startsWith("-") && !line.startsWith("---") ? "diff-del"
+        : line.startsWith("@@") || line.startsWith("diff --git") ? "diff-meta" : "";
+      row.textContent = line + "\n";
+      return row;
+    }));
+    diff.hidden = false;
+  } catch (e) {
+    if (S.selected === p.pane_id) status.textContent = `Could not read the diff: ${e.message}`;
+  }
+}
+$("#codeRefresh").onclick = loadCode;
+
+// ---------- tabs, sending, keys ----------
 $$(".tabs button").forEach((b) => (b.onclick = () => {
   $$(".tabs button").forEach((x) => x.classList.toggle("on", x === b));
   $$(".tab").forEach((t) => t.classList.toggle("on", t.dataset.tab === b.dataset.tab));
   if (b.dataset.tab === "term") requestAnimationFrame(sizeTerm);
+  if (b.dataset.tab === "code") loadCode();
   if (b.dataset.tab === "hist") resetHistory();
 }));
 $("#panelClose").onclick = closePanel;
@@ -675,7 +712,7 @@ function chime() {
   } catch {}
 }
 
-// nueva sala
+// new room
 const dlg = $("#newRoom"), form = $("#newRoomForm");
 $("#newRoomBtn").onclick = () => { form.reset(); $(".custom-cmd", form).hidden = true; dlg.showModal(); };
 form.command.onchange = () => { $(".custom-cmd", form).hidden = form.command.value !== "__custom"; };
@@ -684,7 +721,7 @@ dlg.addEventListener("close", async () => {
   const cmd = form.command.value === "__custom" ? form.custom.value.trim() : form.command.value;
   try {
     await rpc({ op: "new_session", name: form.name.value.trim(), cwd: form.cwd.value.trim() || null, command: cmd || null });
-    toast(`Sala "${form.name.value}" abierta`, true);
+    toast(`Room "${form.name.value}" opened`, true);
   } catch (e) { toast(e.message); }
 });
 
@@ -708,7 +745,7 @@ function toast(msg, ok = false) {
   clearTimeout(toastT); toastT = setTimeout(() => (t.hidden = true), 3200);
 }
 
-// ================= texturas de la mazmorra =================
+// ================= dungeon textures =================
 function makeTiles() {
   let seed = 7;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
@@ -722,7 +759,7 @@ function makeTiles() {
     c.fillStyle = `rgb(${g + 7},${g + 2},${g + 5})`; c.fillRect(x, y, w, 1);
     c.fillStyle = `rgb(${g - 10},${g - 13},${g - 10})`; c.fillRect(x, y + h - 1, w, 1);
     for (let i = 0; i < 5; i++) { c.fillStyle = `rgba(0,0,0,${0.15 + rnd() * 0.2})`; c.fillRect(x + Math.floor(rnd() * w), y + 1 + Math.floor(rnd() * (h - 2)), 1, 1); }
-    if (rnd() > 0.6) { c.fillStyle = "#2e3a26"; c.fillRect(x + Math.floor(rnd() * (w - 3)), y + h - 2, 3, 1); } // musgo
+    if (rnd() > 0.6) { c.fillStyle = "#2e3a26"; c.fillRect(x + Math.floor(rnd() * (w - 3)), y + h - 2, 3, 1); } // moss
   }
   const floor = document.createElement("canvas"); floor.width = 16; floor.height = 16;
   c = floor.getContext("2d");
@@ -736,7 +773,7 @@ function makeTiles() {
   document.documentElement.style.setProperty("--floor", `url(${floor.toDataURL()})`);
 }
 
-// ================= arranque =================
+// ================= startup =================
 makeTiles();
 S.registry = await loadRegistry();
 connect();

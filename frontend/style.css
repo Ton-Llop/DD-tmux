@@ -9,7 +9,7 @@
   --gold: #c9a24a;
   --ok: #7fbf5a;
   --warn: #e8a53a;
-  --px: 4px;              /* tamaño de pixel de los sprites */
+  --px: 4px;              /* sprite pixel size */
   --font-ui: "Pixelify Sans", system-ui, sans-serif;
   --font-body: "VT323", ui-monospace, monospace;
   color-scheme: dark;
@@ -31,7 +31,7 @@ code { font-family: var(--font-body); color: var(--gold); }
 .muted { color: var(--muted); }
 [hidden] { display: none !important; }
 
-/* ---------- barra de abajo (estado + mapa + controles) ---------- */
+/* ---------- bottom bar (status + map + controls) ---------- */
 .bar {
   display: flex; align-items: center; gap: 16px; flex-shrink: 0; z-index: 20;
   padding: 0 20px;
@@ -62,15 +62,15 @@ body.panel-open .bar { margin-right: min(600px, 100vw); }
 .btn.ghost { background: transparent; box-shadow: none; }
 .btn.danger:hover { border-color: var(--blood); color: #ff6a6a; }
 
-/* ---------- salas: se ve una a toda la ventana, el resto en el mapa ---------- */
+/* ---------- rooms: one fills the window, the rest live on the map ---------- */
 .rooms {
   flex: 1; min-height: 0; overflow: hidden;
 }
 .room:not(.current) { display: none; }
 .room.current { position: relative; height: 100%; border: 0; box-shadow: none; }
-.room.current .plaque { /* el nombre de la sala flota sobre la escena */
+.room.current .plaque { /* the room name floats over the scene */
   position: absolute; top: 0; left: 0; right: 0; z-index: 5; background: linear-gradient(#000c, #0000); border: 0; }
-.room.current .stage { zoom: var(--z, 1); } /* --z lo calcula fitStage() para llenar el alto */
+.room.current .stage { zoom: var(--z, 1); } /* --z is computed by fitStage() to fill the height */
 body.panel-open .rooms { margin-right: min(600px, 100vw); }
 .empty { grid-column: 1 / -1; text-align: center; padding: 80px 0; font-size: 26px; }
 
@@ -91,12 +91,12 @@ body.panel-open .rooms { margin-right: min(600px, 100vw); }
   background-size: 128px 64px;
   image-rendering: pixelated;
 }
-.stage::before { /* suelo */
+.stage::before { /* floor */
   content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 70px;
   background-image: var(--floor); background-size: 64px 64px; image-rendering: pixelated;
   border-top: 4px solid #000;
 }
-.stage::after { /* viñeta de luz */
+.stage::after { /* light vignette */
   content: ""; position: absolute; inset: 0; pointer-events: none;
   background:
     radial-gradient(circle at 36px 70px, #ff8a2026 0, transparent 90px),
@@ -108,7 +108,7 @@ body.panel-open .rooms { margin-right: min(600px, 100vw); }
     radial-gradient(circle at calc(100% - 36px) 70px, #ff8a201a 0, transparent 90px),
     radial-gradient(ellipse at 50% 88%, #ff90302a 0%, transparent 30%, #000d 75%, #000 100%); }
 
-/* ---------- fondos pintados y animados (manifest "backgrounds") ---------- */
+/* ---------- painted, animated backgrounds (manifest "backgrounds") ---------- */
 .stage.painted { background: #000; }
 .stage.painted::before, .stage.painted .torch { display: none; }
 .stage.painted::after, .room.resting .stage.painted::after { z-index: 2;
@@ -119,7 +119,7 @@ body.panel-open .rooms { margin-right: min(600px, 100vw); }
 .bgimg { inset: -4%; background: center bottom / cover no-repeat; image-rendering: auto;
   animation: pan 60s ease-in-out infinite alternate; }
 @keyframes pan { from { transform: translateX(-1.5%) scale(1.02); } to { transform: translateX(1.5%) scale(1.05); } }
-/* niebla: 2 capas de 200% de ancho con manchas que se repiten cada 100%; se desplazan en bucle sin salto */
+/* fog: 2 layers 200% wide with blobs repeating every 100%; they loop seamlessly */
 .fog { left: 0; bottom: 14%; width: 200%; height: 45%; opacity: .22; mix-blend-mode: screen;
   background: radial-gradient(ellipse 22% 35% at 20% 60%, var(--fog), transparent 70%) 0 0 / 50% 100% repeat-x,
               radial-gradient(ellipse 28% 30% at 65% 45%, var(--fog), transparent 70%) 0 0 / 50% 100% repeat-x;
@@ -154,7 +154,7 @@ body.panel-open .rooms { margin-right: min(600px, 100vw); }
 .fx-ashes { --fog: #a08a82; }
 .fx-ashes .parts i { top: 0; width: var(--s); height: var(--s); background: #bcaea6aa;
   animation: ash var(--d) linear var(--dl) infinite; }
-.fx-ashes .parts i:nth-child(4n) { background: #ff9a50; box-shadow: 0 0 4px #ff6a20; } /* alguna brasa */
+.fx-ashes .parts i:nth-child(4n) { background: #ff9a50; box-shadow: 0 0 4px #ff6a20; } /* the odd ember */
 @keyframes ash { from { transform: translate(0, -5cqh) rotate(0); } to { transform: translate(var(--dx), 105cqh) rotate(540deg); } }
 .fx-ashes .glow { background: radial-gradient(ellipse 60% 40% at 55% 20%, #ff503028, transparent 70%); animation: pulse-glow 7s ease-in-out infinite; }
 @keyframes pulse-glow { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
@@ -166,28 +166,14 @@ body.panel-open .rooms { margin-right: min(600px, 100vw); }
   box-shadow: inset 0 -6px #ffd060, 0 0 30px 12px #ff7a2055; animation: flicker .35s steps(2) infinite; }
 .room.busy .torch .fire { animation-duration: .18s; }
 
-.campfire { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); z-index: 2; display: none; }
-.room.resting .campfire { display: block; }
-.campfire { width: 48px; height: 40px; }
-.campfire .logs { position: absolute; bottom: 0; left: 0; width: 48px; height: 8px;
-  background: linear-gradient(90deg, #5a3a22 0 45%, #3a2414 45% 55%, #6b4a2a 55%);
-  box-shadow: 0 -4px 0 -0px #0000, 4px 4px #2a1a0e, -4px 4px #2a1a0e; transform: skewX(-8deg); }
-.campfire .fire { position: absolute; left: 12px; bottom: 8px; width: 24px; height: 28px; animation: flicker .3s steps(2) infinite;
-  background:
-    linear-gradient(#0000 0 30%, #ffd060 30% 100%) 8px 0 / 8px 100% no-repeat,
-    linear-gradient(#0000 0 15%, #ff8a20 15% 100%) 0 0 / 24px 100% no-repeat;
-  clip-path: polygon(0 100%, 0 45%, 20% 30%, 33% 0, 50% 25%, 67% 5%, 80% 35%, 100% 50%, 100% 100%);
-  filter: drop-shadow(0 0 16px #ff7a20aa); }
-
 .party {
   position: absolute; left: 60px; right: 60px; bottom: 26px; z-index: 3;
   display: flex; justify-content: space-around; align-items: flex-end; gap: 8px;
 }
-.room.resting .party { justify-content: space-between; }
 
-/* ---------- héroes ---------- */
+/* ---------- heroes ---------- */
 .hero { position: relative; display: flex; flex-direction: column; align-items: center; cursor: pointer; min-width: 64px; }
-img.sprite.custom { image-rendering: auto !important; } /* sprites propios: van a 3x, se reducen suavizados */
+img.sprite.custom { image-rendering: auto !important; } /* custom sprites: drawn at 3x, downscaled smoothly */
 .hero .sprite { image-rendering: pixelated; display: block; transform-origin: 50% 100%; filter: drop-shadow(0 0 1px #000); }
 .hero .shadow { width: 60%; height: 8px; margin-top: -4px; background: #0009; border-radius: 50%; }
 .hero .nameplate { margin-top: 4px; font-size: 16px; background: #000b; padding: 0 6px; white-space: nowrap; color: var(--muted); border: 1px solid #0000; }
@@ -220,7 +206,7 @@ img.sprite.custom { image-rendering: auto !important; } /* sprites propios: van 
 .hero.state-needs_input .sprite:not(.self-animated) { animation: breathe 1s steps(2) infinite; }
 .hero.state-dead .sprite { filter: grayscale(1) brightness(.4); transform: rotate(-90deg) translateX(20%); }
 .hero.state-working .spark { display: block; }
-.hero:has(.self-animated) .spark { display: none !important; } /* los sprites propios traen su propio efecto */
+.hero:has(.self-animated) .spark { display: none !important; } /* custom sprites bring their own effect */
 .spark { position: absolute; right: -4px; top: 40%; width: 6px; height: 6px; background: #fff3b0; display: none;
   box-shadow: 8px -6px #ffd060, 4px 8px #ff9a30; animation: spark .45s steps(2) infinite; }
 
@@ -241,8 +227,8 @@ img.sprite.custom { image-rendering: auto !important; } /* sprites propios: van 
 }
 .panel-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 2px solid var(--line); }
 .who { display: flex; gap: 14px; align-items: center; }
-.portrait { width: 72px; height: 80px; display: grid; place-items: end center; background: #0a080b; border: 2px solid var(--gold); padding-bottom: 4px; overflow: hidden; }
-.portrait img { image-rendering: pixelated; max-height: 72px; }
+.portrait { width: 80px; height: 80px; flex: 0 0 80px; display: grid; place-items: end center; background: #0a080b; border: 2px solid var(--gold); overflow: hidden; }
+.portrait img { width: 100%; height: 100% !important; object-fit: cover; object-position: center bottom; image-rendering: pixelated; }
 .p-name { font-family: var(--font-ui); font-weight: 700; font-size: 22px; color: var(--gold); }
 .p-meta { color: var(--muted); }
 .p-meta { line-height: 1.1; }
@@ -269,7 +255,7 @@ img.sprite.custom { image-rendering: auto !important; } /* sprites propios: van 
 
 .char-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; overflow: auto; }
 .char-card { background: #0a080b; border: 2px solid var(--line); padding: 10px 6px 6px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; min-width: 0; overflow: hidden; }
-/* el sprite cabe en la tarjeta (los propios son anchos) */
+/* the sprite fits the card (custom ones are wide) */
 .char-card .sprite { image-rendering: pixelated; max-width: 100%; max-height: 96px; width: auto; height: auto !important; object-fit: contain; }
 .char-card .cn { font-family: var(--font-ui); font-size: 15px; max-width: 100%; overflow-wrap: anywhere; hyphens: auto; }
 .char-card .cb { font-size: 14px; color: var(--muted); line-height: 1; }
@@ -287,6 +273,10 @@ img.sprite.custom { image-rendering: auto !important; } /* sprites propios: van 
 .hist .k.input { color: var(--gold); } .hist .k.output { color: #8ab4d8; } .hist .k.state { color: var(--muted); } .hist .k.key { color: var(--warn); }
 .hist pre { margin: 6px 0 0; padding: 8px; background: #000; max-height: 320px; overflow: auto; font-family: var(--font-body); font-size: 17px; line-height: 1.05; white-space: pre-wrap; }
 .hist summary { cursor: pointer; }
+.code-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.code-head .hint { overflow-wrap: anywhere; }
+#codeDiff { flex: 1; min-height: 0; margin: 0; padding: 10px; overflow: auto; background: #000; font: 14px/1.4 ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace; white-space: pre; }
+.diff-add { color: #9ad68a; } .diff-del { color: #ff8585; } .diff-meta { color: #8ab4d8; }
 .hist .turn { padding: 10px 8px; margin: 8px 0; background: #0a080b; border: 1px solid var(--line); }
 .turn-head { display: flex; align-items: center; gap: 8px; }
 .turn-state { color: var(--muted); font-family: var(--font-ui); }
@@ -295,7 +285,7 @@ img.sprite.custom { image-rendering: auto !important; } /* sprites propios: van 
 .turn-events { list-style: none; margin: 0; padding: 0 0 0 8px; border-left: 2px solid var(--line); }
 .turn-events > li { padding: 4px 0 4px 8px; }
 
-/* ---------- diálogos / toast ---------- */
+/* ---------- dialogs / toast ---------- */
 .dlg { background: var(--panel); color: var(--ink); border: 3px solid #000; box-shadow: 0 0 0 2px var(--gold), 0 20px 60px #000; padding: 20px 24px; min-width: min(420px, 92vw); }
 .dlg::backdrop { background: #000c; }
 .dlg h2 { font-family: var(--font-ui); color: var(--gold); margin: 0 0 12px; }
@@ -308,7 +298,7 @@ img.sprite.custom { image-rendering: auto !important; } /* sprites propios: van 
   background: var(--panel-2); border: 2px solid var(--blood); padding: 8px 16px; box-shadow: 0 6px 20px #000; }
 .toast.ok { border-color: var(--ok); }
 
-/* ---------- mapa (estilo Darkest Dungeon) ---------- */
+/* ---------- map (Darkest Dungeon style) ---------- */
 .map {
   display: flex; align-items: center; justify-content: safe center; flex-shrink: 1; min-width: 0;
   padding: 12px 8px 30px;
@@ -321,9 +311,6 @@ img.sprite.custom { image-rendering: auto !important; } /* sprites propios: van 
 }
 .map-room:hover { box-shadow: 0 0 0 2px var(--muted), inset 0 0 0 3px #1a1418; }
 .map-room.current { color: var(--gold); box-shadow: 0 0 0 2px var(--gold), 0 0 16px #c9a24a88, inset 0 0 0 3px #1a1418; }
-.map-room.current::after { /* la antorcha del grupo */
-  content: ""; position: absolute; top: -12px; left: 50%; width: 6px; height: 8px; margin-left: -3px;
-  background: #ffb040; box-shadow: 0 0 10px #ff8a20; animation: flicker .4s steps(2) infinite; }
 .map-room.busy::before { content: "⚔"; }
 .map-room.resting::before { content: "z"; }
 .map-room.alert { background: #4a1418; color: #ff6a6a; animation: pulse 1s steps(2) infinite; }
@@ -332,7 +319,7 @@ img.sprite.custom { image-rendering: auto !important; } /* sprites propios: van 
   max-width: 84px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-family: var(--font-body); font-size: 16px; color: var(--muted); }
 .map-room.current .lbl { color: var(--gold); }
-/* actividad en el mapa: bocadillo encima de la sala; clic = desplegar */
+/* activity on the map: bubble above the room; click = expand */
 .map-stop { position: relative; flex-shrink: 0; }
 .map-act { position: absolute; bottom: calc(100% + 18px); left: 50%; transform: translateX(-50%); z-index: 25;
   width: max-content; max-width: 240px; padding: 4px 8px; cursor: pointer; text-align: left;

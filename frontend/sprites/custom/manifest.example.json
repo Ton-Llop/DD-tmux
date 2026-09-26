@@ -1,16 +1,16 @@
 {
   "characters": {
-    "mi-heroe": {
-      "name": "Mi héroe",
-      "blurb": "sprite propio",
+    "my-hero": {
+      "name": "My hero",
+      "blurb": "custom sprite",
       "images": {
-        "idle": "custom/mi-heroe/idle.png",
-        "working": "custom/mi-heroe/attack.gif",
-        "needs_input": "custom/mi-heroe/idle.png"
+        "idle": "custom/my-hero/idle.png",
+        "working": "custom/my-hero/attack.gif",
+        "needs_input": "custom/my-hero/idle.png"
       },
       "height": 110,
       "animated": true
     }
   },
-  "defaults": { "claude": "mi-heroe" }
+  "defaults": { "claude": "my-hero" }
 }

@@ -29,8 +29,8 @@ async def _prune_loop():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if len(settings.auth_token) < 24:
-        raise RuntimeError("TD_AUTH_TOKEN no definido o demasiado corto (min 24 chars). "
-                           "Genera uno: python -c 'import secrets;print(secrets.token_urlsafe(32))'")
+        raise RuntimeError("TD_AUTH_TOKEN missing or too short (min 24 chars). "
+                           "Generate one: python -c 'import secrets;print(secrets.token_urlsafe(32))'")
     await db.connect()
     monitor.start()
     pruner = asyncio.create_task(_prune_loop())
@@ -56,7 +56,7 @@ def require_auth(authorization: str | None = Header(None)):
 class NewSession(BaseModel):
     name: str = Field(pattern=tmux.SESSION_RE.pattern)
     cwd: str | None = None
-    command: str | None = None   # p.ej. "claude" o "codex"
+    command: str | None = None   # e.g. "claude" or "codex"
 
 
 class SendText(BaseModel):
@@ -78,6 +78,18 @@ async def get_panes():
 async def get_screen(pane_id: str, lines: int = 500, ansi: bool = True):
     try:
         return {"pane_id": pane_id, "content": await tmux.capture(pane_id, lines, ansi)}
+    except tmux.TmuxError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/panes/{pane_id}/diff", dependencies=[Depends(require_auth)])
+async def get_code_diff(pane_id: str):
+    ps = monitor.panes.get(pane_id)
+    if not ps:
+        raise HTTPException(404, "pane not found")
+    try:
+        path, diff, truncated = await tmux.code_diff(ps.pane.path)
+        return {"path": path, "diff": diff, "truncated": truncated}
     except tmux.TmuxError as e:
         raise HTTPException(400, str(e))
 
@@ -108,8 +120,8 @@ async def post_text(pane_id: str, body: SendText):
 
 
 class SetCharacter(BaseModel):
-    target: str          # "slot:<sesion>:<win>.<pane>" o "agent:<tipo>"
-    character: str | None = None  # None = quitar asignación
+    target: str          # "slot:<session>:<win>.<pane>" or "agent:<type>"
+    character: str | None = None  # None = clear assignment
 
 
 @app.get("/api/characters", dependencies=[Depends(require_auth)])
@@ -129,7 +141,7 @@ async def post_key(pane_id: str, key: str):
     return {"ok": True}
 
 
-# ---------------- acciones compartidas REST/WS ----------------
+# ---------------- actions shared by REST/WS ----------------
 def _pane_meta(pane_id: str):
     ps = monitor.panes.get(pane_id)
     return (ps.pane.session, ps.pane.agent) if ps else (None, None)
@@ -156,17 +168,17 @@ async def _do(msg: dict):
             except ValueError as e:
                 raise HTTPException(400, str(e))
         else:
-            raise HTTPException(400, f"op desconocida: {op}")
+            raise HTTPException(400, f"unknown op: {op}")
     except tmux.TmuxError as e:
         raise HTTPException(400, str(e))
     except KeyError as e:
-        raise HTTPException(400, f"falta campo {e}")
+        raise HTTPException(400, f"missing field {e}")
 
 
 # ---------------- WebSocket ----------------
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket, token: str | None = None):
-    # Token por query (?token=) o como subprotocolo "bearer.<token>" (no queda en logs de proxy)
+    # Token via query (?token=) or as the "bearer.<token>" subprotocol (stays out of proxy logs)
     proto = next((p for p in ws.scope.get("subprotocols", []) if p.startswith("bearer.")), None)
     if not _valid(token or (proto.removeprefix("bearer.") if proto else None)):
         await ws.close(code=4401)
@@ -179,14 +191,14 @@ async def ws_endpoint(ws: WebSocket, token: str | None = None):
     try:
         while True:
             msg = await ws.receive_json()
-            rid = msg.get("id")  # para correlacionar respuestas
+            rid = msg.get("id")  # to correlate replies
             try:
                 op = msg.get("op")
                 if op == "subscribe":
                     pid = msg["pane_id"]
                     client.subs.add(pid)
                     ps = monitor.panes.get(pid)
-                    if ps:  # pantalla actual inmediata
+                    if ps:  # current screen right away
                         await client.send({"type": "screen", "pane_id": pid, "content": ps.screen})
                 elif op == "unsubscribe":
                     client.subs.discard(msg["pane_id"])
@@ -210,7 +222,7 @@ async def ws_endpoint(ws: WebSocket, token: str | None = None):
         hub.remove(client)
 
 
-# ---------------- frontend estático (va al final: no pisa /api ni /ws) ----------------
+# ---------------- static frontend (goes last: doesn't shadow /api or /ws) ----------------
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 if FRONTEND_DIR.is_dir():
     app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

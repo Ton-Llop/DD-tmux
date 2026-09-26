@@ -1,0 +1,112 @@
+{
+  "characters": {
+    "bufon": {
+      "name": "Jester",
+      "blurb": "laughs while he slits throats",
+      "images": {
+        "idle": "custom/bufon/sleep.gif",
+        "working": "custom/bufon/lute.gif",
+        "needs_input": "custom/bufon/ask.gif",
+        "dead": "custom/bufon/frame0.png"
+      },
+      "height": 130,
+      "animated": true
+    },
+    "medico": {
+      "name": "Plague Doctor",
+      "blurb": "cures or finishes off",
+      "images": {
+        "idle": "custom/medico/sleep.gif",
+        "working": "custom/medico/work.gif",
+        "needs_input": "custom/medico/ask.gif",
+        "dead": "custom/medico/frame0.png"
+      },
+      "height": 130,
+      "animated": true
+    },
+    "cazador": {
+      "name": "Bounty Hunter",
+      "blurb": "hook and chain",
+      "images": {
+        "idle": "custom/cazador/sleep.gif",
+        "working": "custom/cazador/work.gif",
+        "needs_input": "custom/cazador/ask.gif",
+        "dead": "custom/cazador/frame0.png"
+      },
+      "height": 130,
+      "animated": true
+    },
+    "vagabundo": {
+      "name": "Vagrant",
+      "blurb": "the same old shell, with his box",
+      "images": {
+        "idle": "custom/vagabundo/sleep.gif",
+        "working": "custom/vagabundo/work.gif",
+        "needs_input": "custom/vagabundo/ask.gif",
+        "dead": "custom/vagabundo/frame0.png"
+      },
+      "height": 130,
+      "animated": true
+    },
+    "leproso": {
+      "name": "Leper",
+      "blurb": "faceless king",
+      "images": {
+        "idle": "custom/leproso/sleep.gif",
+        "working": "custom/leproso/work.gif",
+        "needs_input": "custom/leproso/ask.gif",
+        "dead": "custom/leproso/frame0.png"
+      },
+      "height": 130,
+      "animated": true
+    },
+    "joana": {
+      "name": "Joana",
+      "blurb": "unbreakable smile",
+      "images": {
+        "idle": "custom/joana/sleep.gif",
+        "working": "custom/joana/work.gif",
+        "needs_input": "custom/joana/ask.gif",
+        "dead": "custom/joana/frame0.png"
+      },
+      "height": 130,
+      "animated": true
+    },
+    "volosin": {
+      "name": "Volosin",
+      "blurb": "rider of the iron bull",
+      "images": {
+        "idle": "custom/volosin/sleep.gif",
+        "working": "custom/volosin/work.gif",
+        "needs_input": "custom/volosin/ask.gif",
+        "dead": "custom/volosin/frame0.png"
+      },
+      "height": 130,
+      "animated": true
+    }
+  },
+  "backgrounds": [
+    {
+      "src": "custom/bg/mazmorra.jpg",
+      "fx": "dungeon"
+    },
+    {
+      "src": "custom/bg/bosque.jpg",
+      "fx": "forest"
+    },
+    {
+      "src": "custom/bg/costa.jpg",
+      "fx": "storm"
+    },
+    {
+      "src": "custom/bg/ruinas.jpg",
+      "fx": "ashes"
+    }
+  ],
+  "defaults": {
+    "claude": "cazador",
+    "codex": "bufon",
+    "other-agent": "medico",
+    "shell": "vagabundo"
+  }
+}

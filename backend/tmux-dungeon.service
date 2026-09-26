@@ -1,5 +1,5 @@
 # ~/.config/systemd/user/tmux-dungeon.service  -> systemctl --user enable --now tmux-dungeon
-# Corre como TU usuario (para ver tu servidor tmux), en la máquina donde viven las sesiones.
+# Runs as YOUR user (so it can see your tmux server), on the machine where the sessions live.
 [Unit]
 Description=tmux-dungeon backend
 After=network-online.target

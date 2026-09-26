@@ -1,149 +1,156 @@
 # DD-tmux
 
-Tus sesiones de tmux como salas de una mazmorra al estilo Darkest Dungeon. Cada agente de IA
-(Claude Code, Codex, Gemini…) es un personaje: trabaja cuando el agente está trabajando, duerme
-cuando ha terminado y levanta un **!** cuando te pide permiso. Al hacer clic en un personaje se abre
-su terminal en vivo, desde donde le mandas órdenes, cambias de personaje o lees la crónica
-(histórico en Postgres).
+Your tmux sessions as rooms in a Darkest Dungeon-style dungeon. Every AI agent
+(Claude Code, Codex, Gemini…) is a character: it works while the agent is working, sleeps
+when it's done and raises a **!** when it asks for permission. Click a character to open
+its live terminal, where you give it orders, change its character or read the chronicle
+(history in Postgres).
 
 ```
 DD-tmux/
-├── backend/      FastAPI + WebSocket + PostgreSQL (vigila tmux)
-├── frontend/     la web (la sirve el propio backend)
-│   └── sprites/custom/   ← tus sprites y fondos (gitignored)
-└── scripts/      setup, arranque y cortador de sprites
+├── backend/      FastAPI + WebSocket + PostgreSQL (watches tmux)
+├── frontend/     the web UI (served by the backend itself)
+│   └── sprites/custom/   ← characters and backgrounds (add your own here)
+└── scripts/      setup, startup and sprite cutter
 ```
 
-## Arranque rápido (WSL)
+## Quick start (WSL)
 
-Necesitas [uv](https://docs.astral.sh/uv/) (el setup lo instala si falta) y tmux.
+You need [uv](https://docs.astral.sh/uv/) (the setup installs it if missing) and tmux.
 
 ```bash
 cd ~/projects/DD-tmux
-bash scripts/postgres-local.sh      # solo si aún no tienes Postgres en el homelab
-bash scripts/setup-wsl.sh           # uv sync (backend/.venv) + backend/.env con token
+bash scripts/postgres-local.sh      # only if you don't have Postgres on the homelab yet
+bash scripts/setup-wsl.sh           # uv sync (backend/.venv) + backend/.env with a token
 ln -sf "$PWD/scripts/dd-tmux" ~/.local/bin/dd-tmux
-dd-tmux                             # arranca en segundo plano y abre http://localhost:8765
+dd-tmux                             # starts in the background and opens http://localhost:8765
 ```
 
-- `dd-tmux stop` lo para, `dd-tmux log` muestra el log. En primer plano: `bash scripts/start.sh`.
-- Con el backend en marcha, los cambios del frontend y de los sprites solo piden recargar la web
-  (Ctrl+F5). Los del backend (`backend/app/`) piden `dd-tmux stop && dd-tmux`.
-- La web pide el token que imprimió `setup-wsl.sh` (`TD_AUTH_TOKEN` en `backend/.env`).
+- `dd-tmux stop` stops it, `dd-tmux log` shows the log. In the foreground: `bash scripts/start.sh`.
+- With the backend running, frontend and sprite changes only need a page reload
+  (Ctrl+F5). Backend changes (`backend/app/`) need `dd-tmux stop && dd-tmux`.
+- The web asks for the token printed by `setup-wsl.sh` (`TD_AUTH_TOKEN` in `backend/.env`).
 
-Lanza tus agentes como siempre (`tmux new -s api` → `claude`) y aparecerán solos.
-También puedes crear salas desde la web con **+ Sala**.
+Launch your agents as usual (`tmux new -s api` → `claude`) and they show up on their own.
+You can also create rooms from the web with **+ Room**.
 
-### Postgres en el homelab
+### Postgres on the homelab
 
-Levanta `backend/docker-compose.postgres.yml` en un LXC/VM de Proxmox y cambia
-`TD_DATABASE_URL` en `backend/.env`. Limita el puerto 5432 a tu LAN con el firewall de Proxmox.
+Bring up `backend/docker-compose.postgres.yml` in a Proxmox LXC/VM and change
+`TD_DATABASE_URL` in `backend/.env`. Restrict port 5432 to your LAN with the Proxmox firewall.
 
-### Arranque automático en WSL (opcional)
+### Autostart on WSL (optional)
 
-Con systemd activado en WSL (`/etc/wsl.conf` → `[boot]\nsystemd=true`), copia
-`backend/tmux-dungeon.service` a `~/.config/systemd/user/`, ajusta las rutas
-(por defecto `~/DD-tmux`) y ejecuta `systemctl --user enable --now tmux-dungeon`.
+With systemd enabled in WSL (`/etc/wsl.conf` → `[boot]\nsystemd=true`), copy
+`backend/tmux-dungeon.service` to `~/.config/systemd/user/`, adjust the paths
+(default `~/DD-tmux`) and run `systemctl --user enable --now tmux-dungeon`.
 
-### Acceso desde fuera de casa
+### Access from outside your home
 
-El backend es una **shell remota**: escucha solo en `127.0.0.1` y nunca se abre el puerto.
-Opciones, todas desde dentro de WSL:
+The backend is a **remote shell**: it listens only on `127.0.0.1` and the port is never opened.
+Options, all from inside WSL:
 
-- **Tailscale** (lo más sencillo): `tailscale serve 8765` → `https://<tu-pc>.<tailnet>.ts.net`
-- **Cloudflare Tunnel + Access**: `cloudflared tunnel` hacia `http://localhost:8765`,
-  con una política de Access (email) delante, además del token.
+- **Tailscale** (the simplest): `tailscale serve 8765` → `https://<your-pc>.<tailnet>.ts.net`
+- **Cloudflare Tunnel + Access**: `cloudflared tunnel` to `http://localhost:8765`,
+  with an Access policy (email) in front, on top of the token.
 
-## La interfaz
+## The interface
 
-- **Una sala a toda la ventana**: cada sesión de tmux es una sala y se ve una cada vez. El tamaño de
-  los personajes lo fija `MAX_ZOOM` en `frontend/js/app.js` (1 = pequeños, con todo el fondo a la
-  vista; 2, 3… = más grandes, siempre a zoom entero para que el pixel art no se deforme).
-- **Mapa** (barra de abajo): las salas unidas por pasillos. Cada sala muestra **⚔** si alguien
-  trabaja, **z** si todos descansan y un **!** rojo si alguien espera órdenes. Clic o **← →** para
-  cambiar de sala. La web recuerda en qué sala estabas.
-- **Actividad en el mapa**: sobre cada sala con alguien trabajando o esperando sale un bocadillo con
-  lo que está haciendo. Clic en él y se despliega con todos los agentes de la sala y sus últimas
-  líneas; clic en un agente te lleva a su terminal.
-- **Fondos animados**: cada sala lleva uno de los fondos del manifest (salas seguidas, fondos
-  distintos) con niebla y partículas según el ambiente. Sin fondos propios se usa el muro de serie.
+- **One room fills the window**: each tmux session is a room and you see one at a time. Character
+  size is set by `MAX_ZOOM` in `frontend/js/app.js` (1 = small, with the whole background in
+  view; 2, 3… = bigger, always at a whole zoom factor so the pixel art doesn't warp).
+- **Map** (bottom bar): the rooms joined by corridors. Each room shows **⚔** if someone is
+  working, **z** if everyone rests and a red **!** if someone awaits orders. Click or **← →** to
+  change room. The web remembers which room you were in.
+- **Activity on the map**: above every room with someone working or waiting there's a bubble with
+  what they're doing. Click it to expand it with every agent in the room and their last
+  lines; click an agent to jump to its terminal.
+- **Animated backgrounds**: each room gets one of the manifest's backgrounds (neighbouring rooms get
+  different ones) with fog and particles depending on the mood. Without custom backgrounds the stock wall is used.
 
-## Personajes
+## Characters
 
-No hay personajes de serie: salen todos del `manifest.json` (ver *Sprites propios*). Ahora mismo:
-Bufón, Médico de la peste, Cazarrecompensas, Leproso y Vagabundo (el de las shells). El personaje por defecto de cada tipo de agente va en
-`defaults` del manifest (`other-agent` = cualquier agente sin default propio); si falta, se usa el primero.
+DD-tmux ships with 7 characters and 4 animated backgrounds, all declared in `manifest.json`:
+Jester, Plague Doctor, Bounty Hunter, Leper, Joana, Volosin and Vagrant (the shell one).
+Want more? See *Adding your own characters*. The default character for each agent type goes in
+the manifest's `defaults` (`other-agent` = any agent without its own default); if missing, the first one is used.
 
-Se cambian desde el panel (pestaña **Personaje**):
-- **Solo este panel** → se guarda por `sesión:ventana.pane`, así que se mantiene aunque reinicies tmux
-- **Todos los Claude/Codex/…** → default para ese tipo de agente; además borra las asignaciones
-  sueltas de los panes de ese tipo, para que el cambio llegue a todos
+Change them from the panel (**Character** tab):
+- **This pane only** → stored by `session:window.pane`, so it survives a tmux restart
+- **All Claude/Codex/…** → default for that agent type; it also clears the individual
+  assignments of panes of that type, so the change reaches all of them
 
-### Sprites propios
+### Adding your own characters
 
-Todo va en `frontend/sprites/custom/` (en `.gitignore`: no subas a GitHub assets con copyright
-de terceros) y se declara en `manifest.json` (mira `manifest.example.json`):
+1. Create a folder `frontend/sprites/custom/<id>/` with one image per state: GIFs or PNGs with a
+   transparent background (`idle`, `working`, `needs_input`, optionally `dead`).
+   Got a sprite sheet instead? Let `scripts/cut_sprites.py` make the GIFs (see *Cutting sprite sheets*).
+2. Add an entry under `characters` in `frontend/sprites/custom/manifest.json`.
+3. Reload the page (Ctrl+F5): it shows up in the **Character** tab.
+
+Backgrounds work the same way: drop the image in `frontend/sprites/custom/bg/` and add it to `backgrounds`.
+The manifest format (`manifest.example.json` is a minimal example):
 
 ```jsonc
 {
   "characters": {
     "bufon": {
-      "name": "Bufón", "blurb": "ríe mientras degüella",
+      "name": "Jester", "blurb": "laughs while he slits throats",
       "images": { "idle": "custom/bufon/sleep.gif", "working": "custom/bufon/lute.gif",
                   "needs_input": "custom/bufon/ask.gif", "dead": "custom/bufon/frame0.png" },
-      "height": 130,          // alto en px "de juego"; la imagen puede ser mayor (se ve nítida con zoom)
-      "animated": true        // GIF animado: desactiva las animaciones CSS de serie
+      "height": 130,          // height in "game" px; the image can be bigger (stays crisp when zoomed)
+      "animated": true        // animated GIF: turns off the stock CSS animations
     }
   },
-  "defaults": { "claude": "bufon" },   // opcional: personaje por tipo de agente
-  "backgrounds": [                     // opcional: fondos de sala, en este orden
+  "defaults": { "claude": "bufon" },   // optional: character per agent type
+  "backgrounds": [                     // optional: room backgrounds, in this order
     { "src": "custom/bg/mazmorra.jpg", "fx": "dungeon" }   // fx: dungeon | forest | storm | ashes
   ]
 }
 ```
 
-Efectos de fondo: `dungeon` (brasas y luz de antorcha), `forest` (luciérnagas), `storm` (lluvia y
-relámpagos), `ashes` (ceniza cayendo y cielo que late). Van mejor imágenes panorámicas (~3:1) con
-el suelo en el tercio de abajo.
+Background effects: `dungeon` (embers and torchlight), `forest` (fireflies), `storm` (rain and
+lightning), `ashes` (falling ash and a pulsing sky). Panoramic images (~3:1) with
+the floor in the bottom third work best.
 
-### Cortar sprite sheets
+### Cutting sprite sheets
 
-`scripts/cut_sprites.py` convierte un sheet de 8 poses (2 filas de 4, fondo transparente) en los
-GIFs de cada estado, alineados por los pies y a 390 px de alto (3× los 130 del manifest):
+`scripts/cut_sprites.py` turns an 8-pose sheet (2 rows of 4, transparent background) into
+one GIF per state, aligned by the feet and 390 px tall (3× the manifest's 130):
 
 ```bash
 uv run --no-project --with pillow --with scipy scripts/cut_sprites.py [id ...]
 ```
 
-Cada personaje es una carpeta `frontend/sprites/custom/<id>/` con `sheet.png` y una entrada en
-`CHARS` dentro del script. Las poses se numeran 0-7 en orden de lectura:
+Each character is a folder `frontend/sprites/custom/<id>/` with `sheet.png` and an entry in
+`CHARS` inside the script. Poses are numbered 0-7 in reading order:
 
 ```python
 "cazador": {
-    "work": ([0, 2, 4, 3, 2, 5], [650, 550, 400, 900, 500, 950]),  # poses y ms (uno para todas o uno por pose)
+    "work": ([0, 2, 4, 3, 2, 5], [650, 550, 400, 900, 500, 950]),  # poses and ms (one for all or one per pose)
     "ask": ([6, 0], 600),
-    "smooth": ["work", "ask"],               # fundidos entre poses + respiración (~13 fps)
-    "sleep_in_sheet": (200, 0, 444, 127),    # durmiendo = pose de abajo a la derecha del sheet;
-},                                           # la caja borra sus zetas fijas (px del recorte)
+    "smooth": ["work", "ask"],               # crossfades between poses + breathing (~13 fps)
+    "sleep_in_sheet": (200, 0, 444, 127),    # sleeping = the sheet's bottom-right pose;
+},                                           # the box erases its baked-in z's (crop px)
 ```
 
-- **Sheets de una fila** (4 poses): `"rows": 1`. Si dos poses se tocan, el script las separa solo.
-- **Durmiendo**: `sleep-src.png` en la carpeta (tumbado, fondo transparente), `sleep_in_sheet` o
-  `"sleep_pose": N` (usa la pose N del sheet tal cual, p. ej. el Leproso dormita arrodillado).
-  El cuerpo respira y aparecen 3 zetas una a una (las suyas si las trae sueltas; si no, las del Bufón).
-- **Atrezo dibujado**: `PROPS` sustituye un GIF por una función propia (p. ej. `bard()`: notas
-  musicales saliendo del laúd).
+- **Single-row sheets** (4 poses): `"rows": 1`. If two poses touch, the script splits them on its own.
+- **Sleeping**: `sleep-src.png` in the folder (lying down, transparent background), `sleep_in_sheet` or
+  `"sleep_pose": N` (uses sheet pose N as-is, e.g. the Leper dozes kneeling).
+  The body breathes and 3 z's appear one by one (its own if they're loose; otherwise the Jester's).
+- **Drawn props**: `PROPS` replaces a GIF with a custom function (e.g. `bard()`: musical
+  notes coming out of the lute).
 
-## Cómo detecta las cosas
+## How it detects things
 
-- **Agente**: busca el ejecutable en el árbol de procesos de cada pane: Claude, Codex, Gemini,
-  Aider, OpenCode, Cursor, Copilot, Qwen, Goose, Crush, Amp, Droid, Kiro y Cline. La lista
-  (`AGENTS`) está en `backend/app/tmux.py`; añade el tuyo y su nombre en `AGENT_LABEL`
+- **Agent**: looks for the executable in each pane's process tree: Claude, Codex, Gemini,
+  Aider, OpenCode, Cursor, Copilot, Qwen, Goose, Crush, Amp, Droid, Kiro and Cline. The list
+  (`AGENTS`) is in `backend/app/tmux.py`; add yours and its name in `AGENT_LABEL`
   (`frontend/js/app.js`).
-- **Estados**: `working` (la pantalla cambió hace < 3 s) · `idle` · `needs_input` (en el fondo
-  de la pantalla aparece "Do you want to…", "(y/n)", "Allow…") · `dead`.
-  Los patrones están en `backend/app/monitor.py` (`NEEDS_INPUT_RE`); añade los tuyos.
-- **Crónica**: órdenes y teclas enviadas, cambios de estado y capturas de pantalla (máx. 1 cada 5 s
-  por pane, más siempre la del final de cada turno). Retención: `TD_RETENTION_DAYS` (14).
+- **States**: `working` (the screen changed < 3 s ago) · `idle` · `needs_input` (the bottom
+  of the screen shows "Do you want to…", "(y/n)", "Allow…") · `dead`.
+  The patterns are in `backend/app/monitor.py` (`NEEDS_INPUT_RE`); add your own.
+- **Chronicle**: orders and keys sent, state changes and screen captures (max. 1 every 5 s
+  per pane, plus always the one at the end of each turn). Retention: `TD_RETENTION_DAYS` (14).
 
-Protocolo WebSocket y API REST: [`backend/README.md`](backend/README.md).
+WebSocket protocol and REST API: [`backend/README.md`](backend/README.md).
