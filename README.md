@@ -13,7 +13,7 @@ one glance tells you who is working, who is done and who needs you.
 
 ## What it does
 
-- **Agents fight while they work, 💤 sleep when they're done.** DD-tmux watches every tmux pane,
+- **Agents fight while they work, sleep when they're done.** DD-tmux watches every tmux pane,
   finds the agent running in it and animates its hero to match: fighting while the screen changes,
   asleep once the turn is over.
 - **❗ when an agent needs you.** Permission prompts (`Do you want to…`, `(y/n)`, `Allow…`)
