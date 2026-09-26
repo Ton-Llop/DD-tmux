@@ -101,7 +101,7 @@ Want more? See *Adding your own characters*. The default character for each agen
 the manifest's `defaults` (`other-agent` = any agent without its own default); if missing, the first one is used.
 
 Change them from the panel (**Character** tab):
-- **This pane only** → stored by `session:window.pane`, so it survives a tmux restart
+- **This panel only** → stored by `session:window.pane`, so it survives a tmux restart
 - **All Claude/Codex/…** → default for that agent type; it also clears the individual
   assignments of panes of that type, so the change reaches all of them
 
