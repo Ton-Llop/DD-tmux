@@ -9,23 +9,23 @@ one glance tells you who is working, who is done and who needs you.
 
 ![DD-tmux in 24 seconds](docs/demo.webp)
 
-<sub>🔊 Want it with sound? [Watch the full demo video](docs/demo.mp4).</sub>
+<sub> Want it with sound? [Watch the full demo video](docs/demo.mp4).</sub>
 
 ## What it does
 
-- **⚔ Agents fight while they work, 💤 sleep when they're done.** DD-tmux watches every tmux pane,
+- **Agents fight while they work, 💤 sleep when they're done.** DD-tmux watches every tmux pane,
   finds the agent running in it and animates its hero to match: fighting while the screen changes,
   asleep once the turn is over.
-- **❗ A red ! when an agent needs you.** Permission prompts (`Do you want to…`, `(y/n)`, `Allow…`)
+- **❗ when an agent needs you.** Permission prompts (`Do you want to…`, `(y/n)`, `Allow…`)
   raise an alert over the hero, light up its room on the map, change the tab title and play a chime.
-- **🔔 A chime when an agent finishes.** When a turn ends you hear it, so you can go do something else
+- **A chime when an agent finishes.** When a turn ends you hear it, so you can go do something else
   while your agents work. Asking and finishing sound different; one click on the bell mutes both.
-- **🖥 Click a hero, you're in its terminal.** A live terminal opens in a side panel: type straight
+- **Click a hero, you're in its terminal.** A live terminal opens in a side panel: type straight
   into it, press `1`/`y`/`Esc` with one click, or send a longer order.
-- **🧾 Code tab: only what the agent changed.** See each captured edit in red and green. New rooms
+- **Code tab: only what the agent changed.** See each captured edit in red and green. New rooms
   launched from DD-tmux enable edit tracking for Claude, Codex, Gemini, OpenCode and Copilot.
-- **📜 Chronicle.** Every order, key press, state change and turn result is kept in Postgres, grouped by turn.
-- **🗺 A map of your whole dungeon.** One room per tmux session, joined by corridors, each with a
+- **Chronicle.** Every order, key press, state change and turn result is kept in Postgres, grouped by turn.
+- **A map of your whole dungeon.** One room per tmux session, joined by corridors, each with a
   bubble showing what its agents are doing right now.
 - **14 agents detected out of the box:** Claude, Codex, Gemini, Aider, OpenCode, Cursor, Copilot,
   Qwen, Goose, Crush, Amp, Droid, Kiro and Cline. Plain shells get a hero too.
