@@ -189,6 +189,8 @@ async def _do(msg: dict):
             await tmux.new_session(msg["name"], msg.get("cwd"), msg.get("command"))
         elif op == "kill_session":
             await tmux.kill_session(msg["name"])
+        elif op == "kill_pane":
+            await tmux.kill_pane(msg["pane_id"])
         elif op == "set_character":
             try:
                 await monitor.set_character(msg["target"], msg.get("character"))
@@ -226,7 +228,7 @@ async def ws_endpoint(ws: WebSocket, token: str | None = None):
                     client.subs.add(pid)
                     ps = monitor.panes.get(pid)
                     if ps:  # current screen right away
-                        await client.send({"type": "screen", "pane_id": pid, "content": ps.screen})
+                        await client.send({"type": "screen", "pane_id": pid, "content": ps.screen, "alt": ps.pane.alt})
                 elif op == "unsubscribe":
                     client.subs.discard(msg["pane_id"])
                 elif op == "history":

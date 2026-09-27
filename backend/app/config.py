@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     # How often tmux is scanned (seconds)
     poll_interval: float = 0.5
     # Scrollback lines captured per pane
-    capture_lines: int = 200
+    capture_lines: int = 3000
     # A pane counts as "working" if its screen changed in the last N seconds
     busy_window: float = 3.0
     # Minimum seconds between persisted snapshots of the same pane

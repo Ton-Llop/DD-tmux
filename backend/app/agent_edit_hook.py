@@ -7,14 +7,12 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
-EXTENSIONS = {".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".css", ".sh", ".sql",
-             ".json", ".toml", ".yaml", ".yml", ".go", ".rs", ".java", ".kt",
-             ".swift", ".c", ".h", ".cpp", ".cs", ".rb", ".php", ".vue", ".svelte"}
 MAX_FILES = 4000
 MAX_FILE_BYTES = 256_000
 MAX_SNAPSHOT_BYTES = 8_000_000
@@ -34,7 +32,7 @@ def snapshot(root):
             continue
         name = os.fsdecode(raw)
         path = Path(name)
-        if path.is_absolute() or ".." in path.parts or path.suffix.lower() not in EXTENSIONS:
+        if path.is_absolute() or ".." in path.parts:  # any text file; binaries fail to decode below
             continue
         target = root / path
         try:
@@ -67,6 +65,17 @@ def unified(before, after):
     return "".join(out)
 
 
+def linux_path(path):
+    """Claude for Windows reports Windows paths (\\\\wsl.localhost\\Ubuntu\\home\\…, C:\\…); map them into WSL."""
+    if "\\" in path or re.match(r"^[A-Za-z]:", path):
+        try:
+            return subprocess.run(["wslpath", "-u", path], check=True, stdout=subprocess.PIPE,
+                                  stderr=subprocess.DEVNULL, text=True, timeout=5).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return path
+
+
 def token():
     value = os.getenv("TD_AUTH_TOKEN")
     if value:
@@ -80,6 +89,19 @@ def token():
     except OSError:
         pass
     return ""
+
+
+def trace(msg):
+    """One line per hook run in /tmp/dd-tmux-agent-edits/hook.log (kept small) to debug missing edits."""
+    log = Path(tempfile.gettempdir()) / "dd-tmux-agent-edits" / "hook.log"
+    try:
+        log.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if log.exists() and log.stat().st_size > 200_000:
+            log.unlink()
+        with log.open("a") as f:
+            f.write(f"{time.strftime('%H:%M:%S')} {msg}\n")
+    except OSError:
+        pass
 
 
 def main():
@@ -98,11 +120,12 @@ def main():
         return
     pane = os.getenv("TMUX_PANE", "")
     if not re.fullmatch(r"%\d+", pane):
-        return
-    cwd = Path(event.get("cwd") or os.getcwd()).resolve()
+        return  # not in tmux
+    cwd = Path(linux_path(event.get("cwd") or os.getcwd())).resolve()
     try:
         root = Path(os.fsdecode(git(cwd, "rev-parse", "--show-toplevel").strip())).resolve()
     except (subprocess.SubprocessError, OSError):
+        trace(f"{phase} {pane} {tool_name}: not a git repo ({cwd})")
         return
     session_id = str(event.get("session_id") or "")
     tool_id = str(event.get("tool_use_id") or event.get("call_id") or "")
@@ -117,22 +140,26 @@ def main():
             state.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             data = {"root": str(root), "files": snapshot(root)}
             state.write_text(json.dumps(data))
-        except (OSError, subprocess.SubprocessError):
-            pass
+            trace(f"pre  {pane} {tool_name} {tool_id[:18]}: {len(data['files'])} files in {root}")
+        except (OSError, subprocess.SubprocessError) as e:
+            trace(f"pre  {pane} {tool_name}: snapshot failed: {e}")
         return
 
     try:
         before = json.loads(state.read_text())
         state.unlink()
     except (OSError, ValueError):
+        trace(f"post {pane} {tool_name} {tool_id[:18]}: no matching pre")
         return
     if before["root"] != str(root):
+        trace(f"post {pane} {tool_name}: repo changed {before['root']} -> {root}")
         return
     try:
         diff = unified(before["files"], snapshot(root))
     except (OSError, subprocess.SubprocessError):
         return
     if not diff:
+        trace(f"post {pane} {tool_name} {tool_id[:18]}: no changes")
         return
     diff = diff[:MAX_DIFF_BYTES]
     root_url = os.getenv("DD_TMUX_API_URL", "http://127.0.0.1")
@@ -153,9 +180,10 @@ def main():
         data=payload, headers={"Authorization": f"Bearer {token()}",
                                "Content-Type": "application/json"})
     try:
-        urllib.request.urlopen(request, timeout=2).close()
-    except (OSError, urllib.error.URLError):
-        pass
+        with urllib.request.urlopen(request, timeout=2) as r:
+            trace(f"post {pane} {tool_name} {tool_id[:18]}: sent {len(diff)} bytes -> HTTP {r.status}")
+    except (OSError, urllib.error.URLError) as e:
+        trace(f"post {pane} {tool_name}: send failed: {e}")
 
 
 if __name__ == "__main__":

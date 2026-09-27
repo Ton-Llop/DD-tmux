@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# dd-tmux [start|stop|log]: starts the backend in the background (if not running) and opens the web.
+# dd-tmux [start|stop|log|hooks]: starts the backend in the background (if not running) and opens the web.
 # `dd-tmux start` only starts it, without opening the browser (used by the tmux hook).
+# `dd-tmux hooks` enables edit tracking (Code tab) for every Claude Code session.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 LOG="${XDG_CACHE_HOME:-$HOME/.cache}/dd-tmux.log"
@@ -10,6 +11,7 @@ running() { pgrep -f "uvicorn app.main:app.*--port $PORT" >/dev/null; }
 case "${1:-}" in
   stop) pkill -f "uvicorn app.main:app.*--port $PORT" && echo "dd-tmux stopped"; exit ;;
   log)  exec tail -f "$LOG" ;;
+  hooks) exec python3 "$ROOT/scripts/install_hooks.py" ;;
 esac
 
 if ! running; then

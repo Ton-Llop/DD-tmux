@@ -50,7 +50,10 @@
           <div class="p-meta" id="pMeta"></div>
         </div>
       </div>
-      <button class="btn ghost close" id="panelClose" aria-label="Close">✕</button>
+      <div class="panel-actions">
+        <button class="btn ghost danger" id="panelKill" title="Close this tmux pane and stop its agent">Kill hero</button>
+        <button class="btn ghost close" id="panelClose" aria-label="Close">✕</button>
+      </div>
     </header>
     <nav class="tabs">
       <button data-tab="term" class="on">Terminal</button>
@@ -128,6 +131,17 @@
       <menu>
         <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
         <button class="btn" value="ok">Open</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="killHeroDialog" class="dlg">
+    <form method="dialog">
+      <h2>Kill this hero?</h2>
+      <p class="confirm-copy"><strong id="killHeroName"></strong> will fall: its tmux pane closes and the agent inside stops.</p>
+      <menu>
+        <button class="btn ghost" value="cancel">Spare them</button>
+        <button class="btn danger" value="kill">Kill hero</button>
       </menu>
     </form>
   </dialog>

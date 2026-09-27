@@ -27,7 +27,7 @@ PANE_FORMAT = SEP.join([
     "#{session_name}", "#{session_id}", "#{window_index}", "#{window_name}",
     "#{pane_id}", "#{pane_index}", "#{pane_pid}", "#{pane_current_command}",
     "#{pane_current_path}", "#{pane_title}", "#{pane_active}", "#{pane_dead}",
-    "#{pane_width}", "#{pane_height}",
+    "#{pane_width}", "#{pane_height}", "#{alternate_on}",
 ])
 
 
@@ -51,6 +51,7 @@ class Pane:
     dead: bool
     width: int
     height: int
+    alt: bool = False    # full-screen TUI (alternate screen): tmux keeps no scrollback for it
     agent: str = "shell"
 
     @property
@@ -139,10 +140,10 @@ async def list_panes() -> list[Pane]:
     panes = []
     for line in raw.splitlines():
         f = line.split(SEP)
-        if len(f) != 14:
+        if len(f) != 15:
             continue
         p = Pane(f[0], f[1], int(f[2]), f[3], f[4], int(f[5]), int(f[6]), f[7],
-                 f[8], f[9], f[10] == "1", f[11] == "1", int(f[12]), int(f[13]))
+                 f[8], f[9], f[10] == "1", f[11] == "1", int(f[12]), int(f[13]), f[14] == "1")
         panes.append(p)
     if panes:
         children, args = await _process_tree()
@@ -351,6 +352,11 @@ def _copilot_home(hook: Path) -> Path:
     }
     (hooks / "dd-tmux-agent-edits.json").write_text(json.dumps(config))
     return root
+
+
+async def kill_pane(pane_id: str):
+    _check_pane(pane_id)
+    await _run("kill-pane", "-t", pane_id)
 
 
 async def kill_session(name: str):

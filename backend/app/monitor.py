@@ -155,7 +155,7 @@ class Monitor:
                 ps.digest, ps.screen, ps.last_change = digest, screen, now
                 plain = strip_ansi(screen).rstrip("\n").splitlines()
                 ps.tail = [l for l in plain if l.strip()][-12:]  # the frontend picks the ones with text
-                await hub.to_subscribers(pid, {"type": "screen", "pane_id": pid, "content": screen})
+                await hub.to_subscribers(pid, {"type": "screen", "pane_id": pid, "content": screen, "alt": pane.alt})
 
             await self._update_state(ps, now)
             if now - ps.last_persist >= settings.persist_interval:
@@ -195,7 +195,8 @@ class Monitor:
             return
         ps.last_persist, ps.persisted_digest = time.time(), ps.digest
         await db.log_event("output", ps.pane.session, ps.pane.pane_id, ps.pane.agent,
-                           {"screen": strip_ansi(ps.screen), "state": ps.state})
+                           # chronicle keeps the last 200 lines; the live terminal gets the full capture
+                           {"screen": "\n".join(strip_ansi(ps.screen).splitlines()[-200:]), "state": ps.state})
 
 
 monitor = Monitor()

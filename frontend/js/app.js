@@ -98,7 +98,7 @@ function onMessage(m) {
       if (S.selected) { renderPanelHead(); renderCharTab(); }
       break;
     case "screen":
-      if (m.pane_id === S.selected) writeScreen(m.content);
+      if (m.pane_id === S.selected) { S.termAlt = !!m.alt; writeScreen(m.content); }
       break;
     case "history": case "ack": case "error": {
       const p = S.pending.get(m.id);
@@ -184,22 +184,24 @@ function goRoom(session) {
 
 // TUI lines that say nothing: borders, empty prompts, key hints, status bars.
 const NOISE = /^[\s─━│┃┌┐└┘├┤╭╮╰╯═║>›❯▶•·.…_-]*$|for shortcuts|to interrupt|esc to cancel|bypass permissions|auto-accept|shift\+tab|ctrl\+|update installed|restart to apply|auto-updat/i;
-// What a working agent is doing: its last action ("⏺ Update(db.py)", "• Edited app/queue.py")…
-const ACTION = /^\s*[⏺●•]\s+(\S.*)$/u;
-// …or else its spinner line ("✻ Pondering… (12s · esc to interrupt)" -> "Pondering…").
-const SPINNER = /^[^\p{L}]*(\p{L}[^(]*?)\s*\([^)]*\b(?:esc|ctrl\+c) to (?:interrupt|cancel)/iu;
+// What a working agent is doing: its last tool call in this turn ("⏺ Update(db.py)", "• Edited app/queue.py").
+// Plain "⏺ text" lines are the agent talking (often an old answer), not an action.
+const ACTION = /^\s*(?:[⏺●]\s+([A-Z][\w-]*\(.*)|•\s+((?:Ran|Edited|Added|Deleted|Updated|Read|Explored|Searched|Called)\b.*))$/u;
+// …or else its spinner line ("* Architecting… (12s · ↓ 825 tokens)" -> "Architecting…"; also Codex/Gemini).
+const SPINNER = /^[^\p{L}]*(\p{L}[^(]*?)\s*\((?:\d+s\b|[^)]*\b(?:esc|ctrl\+c) to (?:interrupt|cancel))/iu;
+// Your own message in the transcript ("> fix the test"): everything above it is an older turn.
+const USER_MSG = /^\s*[>›❯]\s+\S/u;
 
 function doing(tail) {
-  const lines = [...tail].reverse();
-  for (const l of lines) {
+  let spinner = null;
+  for (const l of [...tail].reverse()) {
+    const s = l.match(SPINNER);
+    if (s) { spinner ??= s[1].trim(); continue; }
     const m = l.match(ACTION);
-    if (m && !NOISE.test(m[1])) return m[1].replace(/\s{2,}/g, " ").trim().slice(0, 160);
+    if (m) return (m[1] || m[2]).replace(/\s{2,}/g, " ").trim().slice(0, 160);
+    if (USER_MSG.test(l)) break;
   }
-  for (const l of lines) {
-    const m = l.match(SPINNER);
-    if (m) return m[1].trim();
-  }
-  return null;
+  return spinner;
 }
 
 /** Last `n` lines with content from a pane: the question if it asks for permission; if it is working,
@@ -426,13 +428,21 @@ let term, fit;
 function initTerm() {
   term = new window.Terminal({
     fontFamily: "ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace",
-    fontSize: 13, scrollback: 2000, convertEol: false, cursorBlink: false,
+    fontSize: 13, scrollback: 5000, convertEol: false, cursorBlink: false,
     theme: { background: "#000000", foreground: "#e8dcc4", cursor: "#c9a24a", selectionBackground: "#c9a24a55" },
   });
   fit = new window.FitAddon.FitAddon();
   term.loadAddon(fit);
   term.open($("#term"));
   term.onData(onTermData);
+  // Full-screen agents (Claude Code, Codex…) keep their own history and tmux has none to show:
+  // the wheel scrolls the agent itself (PageUp/PageDown). Normal panes scroll this terminal.
+  let wheelAt = 0;
+  term.attachCustomWheelEventHandler((e) => {
+    if (!S.termAlt || !S.selected) return true;
+    if (e.timeStamp - wheelAt > 120 && e.deltaY) { wheelAt = e.timeStamp; sendKey(e.deltaY < 0 ? "PageUp" : "PageDown"); }
+    return false;
+  });
   new ResizeObserver(() => sizeTerm()).observe($(".term-wrap"));
 }
 
@@ -450,7 +460,21 @@ function sizeTerm() {
 
 function writeScreen(content) {
   const body = content.replace(/\n$/, "").replace(/\n/g, "\r\n");
-  term.write("\x1b[H\x1b[2J\x1b[3J" + body);
+  // Each update redraws the whole capture; if you scrolled up, stay on the line you were reading.
+  let buf = term.buffer.active;
+  const fromBottom = buf.baseY - buf.viewportY;
+  const anchor = fromBottom > 0 ? buf.getLine(buf.viewportY)?.translateToString(true) : null;
+  term.write("\x1b[H\x1b[2J\x1b[3J" + body, () => {
+    if (!fromBottom) return; // following the bottom: keep following
+    buf = term.buffer.active;
+    let target = buf.baseY - fromBottom;
+    if (anchor?.trim()) {
+      for (let i = buf.baseY; i >= 0; i--) {
+        if (buf.getLine(i)?.translateToString(true) === anchor) { target = i; break; }
+      }
+    }
+    term.scrollToLine(Math.max(0, target));
+  });
 }
 
 // direct typing in the terminal -> tmux
@@ -661,6 +685,8 @@ setInterval(async () => {
 }, 3000);
 $$(".hist-filters input").forEach((i) => (i.onchange = renderHistory));
 
+const EDIT_TRACKING_GUIDE = "https://github.com/Ton-Llop/DD-tmux/blob/main/docs/EDIT-TRACKING.md";
+
 async function loadCode() {
   const p = S.panes.get(S.selected);
   if (!p) return;
@@ -678,9 +704,13 @@ async function loadCode() {
     if (!r.ok) throw new Error(events.detail || r.statusText);
     if (S.selected !== p.pane_id) return;
     if (!events.length) {
-      status.textContent = ["claude", "codex", "gemini", "opencode", "copilot"].includes(p.agent)
-        ? `No edits captured yet. Open a new ${agent} room from DD-tmux to enable edit tracking.`
-        : `Edit tracking is not enabled for ${agent} yet.`;
+      const tracked = ["claude", "codex", "gemini", "opencode", "copilot"].includes(p.agent);
+      const guide = Object.assign(document.createElement("a"), {
+        href: EDIT_TRACKING_GUIDE, target: "_blank", rel: "noopener", textContent: "step-by-step guide",
+      });
+      status.replaceChildren(tracked
+        ? `No edits captured yet. First time? Edit tracking needs a one-time setup: follow the `
+        : `Edit tracking isn't available for ${agent} yet. See the `, guide, ".");
       return;
     }
     status.textContent = `${events.length} captured edit${events.length === 1 ? "" : "s"}`;
@@ -722,6 +752,17 @@ $$(".tabs button").forEach((b) => (b.onclick = () => {
   if (b.dataset.tab === "hist") resetHistory();
 }));
 $("#panelClose").onclick = closePanel;
+$("#panelKill").onclick = async () => {
+  const p = S.panes.get(S.selected);
+  if (!p) return;
+  const dialog = $("#killHeroDialog");
+  $("#killHeroName").textContent = `${characterFor(p).name} (${AGENT_LABEL[p.agent] || p.agent} · ${p.slot})`;
+  dialog.returnValue = "";
+  dialog.showModal();
+  const ok = await new Promise((resolve) => dialog.addEventListener("close", () => resolve(dialog.returnValue === "kill"), { once: true }));
+  if (!ok) return;
+  try { await rpc({ op: "kill_pane", pane_id: p.pane_id }); } catch (e) { toast(e.message); } // pane_close closes the panel
+};
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#panel").hidden && !$("#term").contains(document.activeElement)) closePanel(); });
 
 $$(".keys button").forEach((b) => (b.onclick = () => {

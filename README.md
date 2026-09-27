@@ -22,8 +22,8 @@ one glance tells you who is working, who is done and who needs you.
   while your agents work. Asking and finishing sound different; one click on the bell mutes both.
 - **Click a hero, you're in its terminal.** A live terminal opens in a side panel: type straight
   into it, press `1`/`y`/`Esc` with one click, or send a longer order.
-- **Code tab: only what the agent changed.** See each captured edit in red and green. New rooms
-  launched from DD-tmux enable edit tracking for Claude, Codex, Gemini, OpenCode and Copilot.
+- **Code tab: only what the agent changed.** See each captured edit in red and green. Works with Claude,
+  Codex, Gemini, OpenCode and Copilot; turn it on once with the [step-by-step guide](docs/EDIT-TRACKING.md).
 - **Chronicle.** Every order, key press, state change and turn result is kept in Postgres, grouped by turn.
 - **A map of your whole dungeon.** One room per tmux session, joined by corridors, each with a
   bubble showing what its agents are doing right now.
@@ -47,7 +47,10 @@ mkdir -p ~/.local/bin && ln -sf "$PWD/scripts/dd-tmux" ~/.local/bin/dd-tmux   # 
 dd-tmux                             # starts in the background and opens http://localhost:8765
 ```
 
-- `dd-tmux stop` stops it, `dd-tmux log` shows the log, `dd-tmux start` starts it without opening the browser. In the foreground: `bash scripts/start.sh`.
+- `dd-tmux stop` stops it, `dd-tmux log` shows the log, `dd-tmux start` starts it without opening the browser.
+  In the foreground: `bash scripts/start.sh`.
+- **Code tab:** run `dd-tmux hooks` once and restart your agents. Claude for Windows, Codex and the rest
+  need an extra step or two: follow [docs/EDIT-TRACKING.md](docs/EDIT-TRACKING.md).
 - With the backend running, frontend and sprite changes only need a page reload
   (Ctrl+F5). Backend changes (`backend/app/`) need `dd-tmux stop && dd-tmux`.
 - The web asks for the token printed by `setup-wsl.sh` (`TD_AUTH_TOKEN` in `backend/.env`).
